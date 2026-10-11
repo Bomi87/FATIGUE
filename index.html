@@ -7,7 +7,7 @@
    CREW DUTY DASHBOARD
   </title>
   <style>
-   :root {
+:root {
     color-scheme:dark;
     font-family:Inter,system-ui,'Malgun Gothic',sans-serif;
     background:#0a1220;
@@ -222,19 +222,20 @@ footer {
     font-size:11px;
 }
 @media(max-width:950px) {
-    .layout; {
+    .layout {
         grid-template-columns:1fr;
     }
-    .cards; {
+    .cards {
         grid-template-columns:repeat(2,1fr);
     }
-    header; {
+    header {
         display:block;
     }
 }
-  </style>
+</style>
  </head>
  <body>
+  
   <header>
    <div>
     <div class="brand">
@@ -244,8 +245,10 @@ footer {
      ACTUAL OPERATIONS · PLANNED TRIP SIMULATION · DUTY / FLIGHT TIME
     </div>
    </div>
-   <div class="sub" id="updated">
-    Loading…
+   <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+    <div class="sub" id="updated">
+     데이터 연결 대기
+    </div>
    </div>
   </header>
   <main>
@@ -407,7 +410,7 @@ footer {
    근무시간 = 연속 DUTY의 (BLOCK + GROUND) + 01:30. 법적 한도 미입력 시 ‘LIMIT 미설정’으로 표시합니다. G/T 11:30 이상 DUTY 분리 규칙은 법정 휴식 충족 판정과 별개입니다.
   </footer>
   <script>
-   'use strict';
+'use strict';
 let DATA=null,SELECTED=new Set(),activePerson=null;
 const $=id=>document.getElementById(id),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const hh=m=>{let sign=m<0?'-':'';
@@ -492,23 +495,51 @@ $('trips').querySelectorAll('input[data-trip]').forEach(el=>el.onchange=()=>{if(
 else SELECTED.delete(el.dataset.trip);
 refresh()});
 }
-function load(){const msg=$('message');
-msg.hidden=true;
-$('updated').textContent='Loading…';
-if(!window.google?.script?.run){msg.hidden=false;
-msg.textContent='이 HTML은 Apps Script 웹앱에서 실행해야 합니다. GitHub Pages에서는 google.script.run 인증 API를 사용할 수 없습니다.';
-return}
-google.script.run.withSuccessHandler(data=>{if(!data.ok)throw Error(data.error);
-DATA=data;
-$('updated').textContent='Loaded '+data.meta.generatedAt+' UTC';
-let errors=[...data.errors.actual.map(x=>'실제: '+x),...data.errors.planned.map(x=>'예정: '+x)];
-if(errors.length){msg.hidden=false;
-msg.textContent='일부 기록 제외: '+errors.slice(0,12).join(' / ')}SELECTED.clear();
-activePerson=null;
-showTrips();
-refresh()}).withFailureHandler(err=>{msg.hidden=false;
-msg.textContent='데이터 로딩 오류: '+err.message;
-$('updated').textContent='Failed'}).apiLoadData();
+// Google Apps Script hosts this HTML. No Worker, no public API or CORS dependency.
+let loading = false;
+function authError(message) {
+  const msg = $('message');
+  msg.hidden = false;
+  msg.textContent = message;
+}
+function load() {
+  if (loading) return;
+  if (!window.google || !google.script || !google.script.run) {
+    authError('이 화면은 GAS 웹앱 주소에서 실행해야 합니다. GitHub Pages에서는 동작하지 않습니다.');
+    return;
+  }
+  loading = true;
+  const msg = $('message');
+  msg.hidden = true;
+  $('updated').textContent = 'Loading…';
+  google.script.run
+    .withSuccessHandler(function(data) {
+      loading = false;
+      if (!data || !data.ok) {
+        authError((data && data.error) || '데이터를 가져오지 못했습니다.');
+        return;
+      }
+      DATA = data;
+      $('updated').textContent = 'Loaded ' + data.meta.generatedAt + ' UTC';
+      const errors = [
+        ...(data.errors?.actual || []).map(x => '실제: ' + x),
+        ...(data.errors?.planned || []).map(x => '예정: ' + x)
+      ];
+      if (errors.length) {
+        msg.hidden = false;
+        msg.textContent = '일부 기록 제외: ' + errors.slice(0, 12).join(' / ');
+      }
+      SELECTED.clear();
+      activePerson = null;
+      showTrips();
+      refresh();
+    })
+    .withFailureHandler(function(err) {
+      loading = false;
+      authError('데이터 로딩 오류: ' + (err?.message || String(err)));
+      $('updated').textContent = 'Failed';
+    })
+    .apiLoadData();
 }
 $('asof').value=new Date().toISOString().slice(0,10);
 ['asof','search','kind','threshold'].forEach(id=>$(id).addEventListener(id==='search'?'input':'change',refresh));
@@ -521,7 +552,6 @@ $('clear').onclick=()=>{SELECTED.clear();
 showTrips();
 refresh()};
 load();
-  </script>
+</script>
  </body>
 </html>
-
