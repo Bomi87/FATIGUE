@@ -542,8 +542,24 @@ function selectPlans(){
  return {kept,skipped};
 }
 let ALL_CREW=[];
+function recentActualCrewKeys(){
+ // Same recent-3-calendar-month eligibility as the main CREW table.
+ const today=new Date();
+ const targetMonthEnd=new Date(Date.UTC(today.getUTCFullYear(),today.getUTCMonth()-2,0)).getUTCDate();
+ const cutoff=Date.UTC(today.getUTCFullYear(),today.getUTCMonth()-3,Math.min(today.getUTCDate(),targetMonthEnd));
+ const active=new Set();
+ for(const leg of (DATA?.actual||[])){
+   if(leg.arr>=cutoff&&leg.arr<=Date.now()){
+     for(const person of leg.people)active.add(person.name.toLowerCase());
+   }
+ }
+ return active;
+}
 function showCrewChoices(){
- const names=ALL_CREW.filter(p=>p.name.toLowerCase().includes(($('crewSearch').value||'').trim().toLowerCase()));
+ const active=recentActualCrewKeys();
+ // Inactive people must not remain assigned invisibly after a reload.
+ for(const key of CREW_SELECTED)if(!active.has(key))CREW_SELECTED.delete(key);
+ const names=ALL_CREW.filter(p=>active.has(p.name.toLowerCase())&&p.name.toLowerCase().includes(($('crewSearch').value||'').trim().toLowerCase()));
  $('crewChoices').innerHTML=names.map(p=>`<label class="trip"><input type="checkbox" data-crew="${esc(p.name.toLowerCase())}" ${CREW_SELECTED.has(p.name.toLowerCase())?'checked':''}><span>${esc(p.name)} <small>(${p.kind})</small></span></label>`).join('')||'<p class="hint">CREW가 없습니다.</p>';
  $('crewChoices').querySelectorAll('input[data-crew]').forEach(el=>el.onchange=()=>{if(el.checked)CREW_SELECTED.add(el.dataset.crew);else CREW_SELECTED.delete(el.dataset.crew);refresh();});
 }
@@ -558,11 +574,7 @@ const threshold=Math.min(100,Math.max(1,Number($('threshold').value)||85));
 const {kept,skipped}=selectPlans(),all=buildPersonLegs(DATA.actual,kept);
 // Visibility: only crew with a completed ACTUAL LEG in the last 3 calendar months (relative to today).
 // Future simulation legs cannot make an otherwise inactive person visible.
-const today=new Date();
-const endOfTargetMonth=new Date(Date.UTC(today.getUTCFullYear(),today.getUTCMonth()-2,0)).getUTCDate();
-const cutoff3m=Date.UTC(today.getUTCFullYear(),today.getUTCMonth()-3,Math.min(today.getUTCDate(),endOfTargetMonth));
-const recentActual=new Set();
-for(const l of DATA.actual){if(l.arr>=cutoff3m&&l.arr<=Date.now())for(const person of l.people)recentActual.add(person.name.toLowerCase());}
+const recentActual=recentActualCrewKeys();
 let results=all.filter(p=>recentActual.has(p.name.toLowerCase())).map(p=>({...p,...compute(p,asof),assessment:null}));
 // For future trips, flag a limit reached at ANY duty end in the selected trip.
 results.forEach(p=>{
