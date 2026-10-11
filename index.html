@@ -235,7 +235,10 @@ footer {
 </style>
  </head>
  <body>
-  
+  <div id="authScreen" style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;background:#0a1220;color:#edf3ff;font-family:system-ui,'Malgun Gothic',sans-serif;">
+    승인 확인 중...
+  </div>
+  <div id="appRoot" style="display:none;">
   <header>
    <div>
     <div class="brand">
@@ -246,8 +249,10 @@ footer {
     </div>
    </div>
    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+    <div id="loginButton">
+    </div>
     <div class="sub" id="updated">
-     데이터 연결 대기
+     로그인 필요
     </div>
    </div>
   </header>
@@ -409,6 +414,9 @@ footer {
   <footer>
    근무시간 = 연속 DUTY의 (BLOCK + GROUND) + 01:30. 법적 한도 미입력 시 ‘LIMIT 미설정’으로 표시합니다. G/T 11:30 이상 DUTY 분리 규칙은 법정 휴식 충족 판정과 별개입니다.
   </footer>
+  </div>
+  <script async="" defer="" src="https://accounts.google.com/gsi/client">
+  </script>
   <script>
 'use strict';
 let DATA=null,SELECTED=new Set(),activePerson=null;
@@ -495,51 +503,112 @@ $('trips').querySelectorAll('input[data-trip]').forEach(el=>el.onchange=()=>{if(
 else SELECTED.delete(el.dataset.trip);
 refresh()});
 }
-// Google Apps Script hosts this HTML. No Worker, no public API or CORS dependency.
+// 24-hour common-auth.js cache remains unchanged.
+// Additional Google ID credential is required for every private GAS API request.
+// ID tokens expire (typically around 1 hour); renewal may prompt the user.
+const BACKEND_URL = 'https://script.google.com/macros/s/AKfycbw_hSBOeESSs9C8S_Mf2ORDBrRNCrb4AA30S4pkY_7C6I_b6QKaeaUYA0-dklS3UDXJSA/exec';
+const GOOGLE_CLIENT_ID = '434108168386-jn8hp4mflhn68n98n6m9r1nm6iv7b3qe.apps.googleusercontent.com';
+let idToken = '';
+let tokenExpiryMs = 0;
 let loading = false;
+let requestingToken = false;
+let oauthReady = false;
+
 function authError(message) {
   const msg = $('message');
   msg.hidden = false;
   msg.textContent = message;
 }
-function load() {
-  if (loading) return;
-  if (!window.google || !google.script || !google.script.run) {
-    authError('이 화면은 GAS 웹앱 주소에서 실행해야 합니다. GitHub Pages에서는 동작하지 않습니다.');
+
+function receiveCredential(response) {
+  idToken = String(response?.credential || '');
+  if (!idToken) return authError('Google 인증정보를 받지 못했습니다.');
+  try {
+    const p = JSON.parse(atob(idToken.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));
+    tokenExpiryMs = Number(p.exp)*1000;
+  } catch (e) { tokenExpiryMs = 0; }
+  requestingToken = false;
+  $('loginButton').style.display='none';
+  load();
+}
+
+function requestCredential() {
+  if (!window.CURRENT_PORTAL_USER) return;
+  if (!window.google?.accounts?.id) {
+    authError('Google 로그인 모듈을 불러오는 중입니다. 잠시 후 새로고침하세요.');
     return;
   }
-  loading = true;
-  const msg = $('message');
-  msg.hidden = true;
-  $('updated').textContent = 'Loading…';
-  google.script.run
-    .withSuccessHandler(function(data) {
-      loading = false;
-      if (!data || !data.ok) {
-        authError((data && data.error) || '데이터를 가져오지 못했습니다.');
-        return;
-      }
-      DATA = data;
-      $('updated').textContent = 'Loaded ' + data.meta.generatedAt + ' UTC';
-      const errors = [
-        ...(data.errors?.actual || []).map(x => '실제: ' + x),
-        ...(data.errors?.planned || []).map(x => '예정: ' + x)
-      ];
-      if (errors.length) {
-        msg.hidden = false;
-        msg.textContent = '일부 기록 제외: ' + errors.slice(0, 12).join(' / ');
-      }
-      SELECTED.clear();
-      activePerson = null;
-      showTrips();
-      refresh();
-    })
-    .withFailureHandler(function(err) {
-      loading = false;
-      authError('데이터 로딩 오류: ' + (err?.message || String(err)));
-      $('updated').textContent = 'Failed';
-    })
-    .apiLoadData();
+  if (!oauthReady) {
+    google.accounts.id.initialize({
+      client_id: GOOGLE_CLIENT_ID,
+      callback: receiveCredential,
+      auto_select: true,
+      cancel_on_tap_outside: false
+    });
+    google.accounts.id.renderButton($('loginButton'),{
+      theme:'outline',size:'large',shape:'pill',text:'continue_with',width:220
+    });
+    oauthReady = true;
+  }
+  $('loginButton').style.display = 'block';
+  if (!requestingToken) {
+    requestingToken = true;
+    google.accounts.id.prompt();
+  }
+}
+
+// POST to GAS through an isolated hidden iframe, no Worker, JSONP or CORS fetch.
+// The reply origin, request ID, and source window are checked.
+function gasBridgePost(payload) {
+  return new Promise((resolve,reject)=>{
+    const frame=document.createElement('iframe');
+    frame.name='crewBridge_'+Math.random().toString(36).slice(2);
+    frame.style.display='none';
+    const form=document.createElement('form');
+    form.method='POST';
+    form.action=BACKEND_URL;
+    form.target=frame.name;
+    form.style.display='none';
+    const reqId=crypto.randomUUID?.() || String(Date.now())+'_'+Math.random();
+    let done=false;
+    function cleanup(){window.removeEventListener('message',onMessage);clearTimeout(timer);frame.remove();form.remove();}
+    function finish(error,result){if(done)return;done=true;cleanup();if(error)reject(error);else resolve(result);}
+    function onMessage(evt){
+      if (!['https://script.google.com','https://script.googleusercontent.com'].includes(evt.origin))return;
+      if(evt.source!==frame.contentWindow)return;
+      if(evt.data?.type!=='CREW_DUTY_REPLY'||evt.data.reqId!==reqId)return;
+      finish(null,evt.data.data);
+    }
+    const timer=setTimeout(()=>finish(new Error('GAS 응답 시간 초과 (60초). 배포/iframe 정책을 확인하세요.')),60000);
+    window.addEventListener('message',onMessage);
+    Object.entries({...payload,reqId}).forEach(([key,value])=>{
+      const input=document.createElement('input');input.type='hidden';input.name=key;input.value=String(value);form.appendChild(input);
+    });
+    document.body.appendChild(frame);document.body.appendChild(form);form.submit();
+  });
+}
+
+async function load(){
+  if(!window.CURRENT_PORTAL_USER)return;
+  if(!idToken || Date.now()>tokenExpiryMs-60000){
+    idToken='';
+    requestCredential();
+    return;
+  }
+  if(loading)return;
+  loading=true;
+  $('message').hidden=true;
+  $('updated').textContent='Loading…';
+  try{
+    const data=await gasBridgePost({action:'data',idToken});
+    if(!data || !data.ok)throw Error(data?.error || '백엔드 오류');
+    DATA=data;
+    $('updated').textContent='Loaded '+data.meta.generatedAt+' UTC';
+    const errors=[...(data.errors?.actual||[]).map(x=>'실제: '+x),...(data.errors?.planned||[]).map(x=>'예정: '+x)];
+    if(errors.length){$('message').hidden=false;$('message').textContent='일부 기록 제외: '+errors.slice(0,12).join(' / ');}
+    SELECTED.clear();activePerson=null;showTrips();refresh();
+  }catch(error){authError('데이터 로딩 오류: '+error.message);$('updated').textContent='Failed';}
+  finally{loading=false;}
 }
 $('asof').value=new Date().toISOString().slice(0,10);
 ['asof','search','kind','threshold'].forEach(id=>$(id).addEventListener(id==='search'?'input':'change',refresh));
@@ -551,7 +620,18 @@ refresh()};
 $('clear').onclick=()=>{SELECTED.clear();
 showTrips();
 refresh()};
-load();
+// Use existing 24-hour portal cache and app permission gate.
+let crewAppStarted = false;
+window.startProtectedApp = function () {
+  if (crewAppStarted) return;
+  crewAppStarted = true;
+  requestCredential();
+};
+(function waitForPortalAuth(){
+  if(window.CURRENT_PORTAL_USER){window.startProtectedApp();return;}
+  setTimeout(waitForPortalAuth,250);
+})();
 </script>
+  <script src="https://bomi87.github.io/SK-Aviation-portal/common-auth.js"></script>
  </body>
 </html>
