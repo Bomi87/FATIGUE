@@ -247,6 +247,24 @@ footer {
         display:block;
     }
 }
+
+/* Compact reference limits; informational only, not the calculation engine. */
+.limit-reference {
+    display:flex;
+    align-items:center;
+    flex-wrap:wrap;
+    gap:6px 15px;
+    padding:9px 13px;
+    margin-bottom:14px;
+    border:1px solid #2d415a;
+    border-radius:9px;
+    background:#111e31;
+    color:#a9bbd3;
+    font-size:11px;
+    line-height:1.5;
+}
+.limit-reference strong { color:#dce7f8; font-weight:650; }
+.limit-reference .limit-heading { color:#90a9ca; font-weight:700; }
 </style>
  </head>
  <body>
@@ -272,6 +290,13 @@ footer {
    </div>
   </header>
   <main>
+   <aside class="limit-reference" aria-label="운항시간 관리 참고 기준">
+    <span class="limit-heading">운항시간 관리 참고 기준</span>
+    <span>Duty 7일 <strong>60시간</strong></span>
+    <span>Duty 28일 <strong>190시간</strong></span>
+    <span>Flight 28일 <strong>100시간</strong> (보수적 적용)</span>
+    <span>Flight 365일 <strong>1,000시간</strong></span>
+   </aside>
    <div class="msg" hidden="" id="message">
    </div>
    <section class="panel controls">
@@ -348,12 +373,9 @@ footer {
       예정 TRIP 선택 (실제 기록에 포함된 LEG는 제외)
      </h2>
      <div class="controls" style="margin-bottom:10px">
-      <button id="selectall">
-       전체 선택
-      </button>
-      <button id="clear">
-       선택 해제
-      </button>
+      <select id="aircraftTab"><option value="ACJ">ACJ</option><option value="G650">G650</option></select>
+      <span class="sub" id="simInstruction">스케줄 번호를 클릭하면 그 스케줄까지 자동 누적</span>
+      <button id="clear">실제 운항만 보기</button>
       <span class="sub" id="selectedSummary">
       </span>
      </div>
@@ -361,15 +383,10 @@ footer {
      </div>
     </section>
     <section class="panel">
-     <h2>
-      상세 / 계산 설명
-     </h2>
-     <p class="hint">
-      모든 RAW 시각은 UTC로 계산합니다. G/T 11:30 미만은 연속 DUTY이며 11:30 이상은 분리합니다. 각 예정 비행은 먼저 실제 운항 기록과 중복 여부를 확인합니다. 같은 TRIP의 연속 LEG는 휴식 분리 기준에 따라 DUTY로 묶습니다. PF·PM·ACM은 해당 LEG 전체 BLOCK을 Flight Time으로 계산하며 동일 인원은 중복 집계하지 않습니다.
-     </p>
-     <div class="hint" id="details">
-      승무원을 클릭하면 상세 근무 세그먼트가 표시됩니다.
-     </div>
+     <h2>시뮬레이션 CREW · 복수 선택</h2>
+     <input id="crewSearch" type="search" placeholder="CREW 이름 검색" style="width:100%;margin-bottom:10px" />
+     <div class="scroll" id="crewChoices"></div>
+     <p class="hint">선택된 CREW는 해당 기종의 모든 누적 예정 LEG에 배정됩니다.</p>
     </section>
    </div>
    <section class="panel">
@@ -429,7 +446,7 @@ footer {
   </script>
   <script>
 'use strict';
-let DATA=null,SELECTED=new Set(),activePerson=null;
+let DATA=null,CREW_SELECTED=new Set(),ACTIVE_AIRCRAFT="ACJ",STEP_INDEX=0;
 let SIMULATED_ASOF=null;
 // Default: highest 365-day DUTY first. Header clicks choose the metric (largest first).
 let CREW_SORT_KEY='duty365', CREW_SORT_DIRECTION='desc';
@@ -474,7 +491,7 @@ function dedupeKey(l){return [l.dateUTC,l.from,l.to,(l.flight||'').toUpperCase()
 // Do not discard a flight merely because route/date matches. Strong match needs flight number or aircraft,
 // plus departure proximity and block agreement. Ambiguities are counted and shown for review.
 function duplicates(actual,p){let same=actual.filter(a=>a.from===p.from&&a.to===p.to&&Math.abs(a.dep-p.dep)<=90*60000&&Math.abs(a.block-p.block)<=45);
-return same.filter(a=>(a.flight&&p.flight&&a.flight.toUpperCase()===p.flight.toUpperCase())||(a.aircraft&&p.aircraft&&a.aircraft.toUpperCase()===p.aircraft.toUpperCase()));
+return same.filter(a=>(a.flight&&p.flight&&a.flight.toUpperCase()===p.flight.toUpperCase())||(a.aircraft&&p.aircraft&&((a.aircraft.toUpperCase()===p.aircraft.toUpperCase())||(p.aircraft==='ACJ'&&a.aircraft.toUpperCase()==='HL8080')||(p.aircraft==='G650'&&a.aircraft.toUpperCase()==='HL8372'))));
 }
 function tripGroups(legs){let by=new Map();
 for(const l of legs){let k=l.trip?('TRIP:'+l.trip):('DAY:'+l.dateUTC+':'+l.aircraft);
@@ -514,10 +531,21 @@ top=category+' '+days+'일';
 }}}
 return {seen,maxPct,top,status:!seen?'미설정':maxPct>100?'초과':maxPct>=threshold?'접근':'정상'};
 }
-function selectPlans(){let chosen=tripGroups(DATA.planned).filter(g=>SELECTED.has(g.id)).flatMap(g=>g.legs),kept=[],skipped=[];
-for(const l of chosen){let found=duplicates(DATA.actual,l);
-if(found.length)skipped.push(l);
-else kept.push(l)}return {kept,skipped};
+function currentGroups(){return tripGroups(DATA?.planned||[]).filter(g=>g.legs[0]?.aircraft===ACTIVE_AIRCRAFT);}
+function selectPlans(){
+ const groups=currentGroups(), chosen=groups.slice(0,STEP_INDEX).flatMap(g=>g.legs),kept=[],skipped=[];
+ for(const leg of chosen){if(duplicates(DATA.actual,leg).length){skipped.push(leg);continue;}
+  const people=[...CREW_SELECTED].map(key=>{const p=ALL_CREW.find(q=>q.name.toLowerCase()===key);
+   return p?{name:p.name,kind:p.kind,flightEligible:p.kind==='pilot'}:null;}).filter(Boolean);
+  kept.push({...leg,people});
+ }
+ return {kept,skipped};
+}
+let ALL_CREW=[];
+function showCrewChoices(){
+ const names=ALL_CREW.filter(p=>p.name.toLowerCase().includes(($('crewSearch').value||'').trim().toLowerCase()));
+ $('crewChoices').innerHTML=names.map(p=>`<label class="trip"><input type="checkbox" data-crew="${esc(p.name.toLowerCase())}" ${CREW_SELECTED.has(p.name.toLowerCase())?'checked':''}><span>${esc(p.name)} <small>(${p.kind})</small></span></label>`).join('')||'<p class="hint">CREW가 없습니다.</p>';
+ $('crewChoices').querySelectorAll('input[data-crew]').forEach(el=>el.onchange=()=>{if(el.checked)CREW_SELECTED.add(el.dataset.crew);else CREW_SELECTED.delete(el.dataset.crew);refresh();});
 }
 function refresh(){if(!DATA)return;
 const selectedLegs=selectPlans().kept;
@@ -554,22 +582,15 @@ $('count').textContent=visible.length;
 $('exceed').textContent=visible.filter(p=>p.assessment.status==='초과').length;
 $('near').textContent=visible.filter(p=>p.assessment.status==='접근').length;
 $('unconfigured').textContent=visible.filter(p=>p.assessment.status==='미설정').length;
-$('selectedSummary').textContent=`선택 ${SELECTED.size}개 TRIP / 신규 ${kept.length} LEG / 완료 기록과 중복 제외 ${skipped.length} LEG / 집계 기준 ${utcDate(asof)} UTC`; 
+$('selectedSummary').textContent=`${ACTIVE_AIRCRAFT} 스케줄 1~${STEP_INDEX} 누적 · CREW ${CREW_SELECTED.size}명 · 신규 ${kept.length} LEG · 중복 제외 ${skipped.length} LEG · ${utcDate(asof)} UTC`; 
 $('rows').innerHTML=visible.length ? visible.map(p=>{let a=p.assessment,cls=a.status==='초과'?'bad':a.status==='접근'?'warn':a.status==='정상'?'ok':'unknown',c=d=>d===null?'—':hh(d);
-return `<tr data-name="${esc(p.name)}"><td><button type="button" class="person" data-key="${esc(p.name.toLowerCase())}">${esc(p.name)}</button></td><td>${p.kind==='pilot'?'Pilot':'Cabin/Other'}</td>${[7,28,365].map(n=>'<td>'+c(p.tot.duty[n])+'</td>').join('')}${[7,28,365].map(n=>'<td>'+c(p.tot.flight[n])+'</td>').join('')}<td>${a.seen?a.maxPct.toFixed(1)+'% <small>'+esc(a.top)+'</small>':'—'}${a.seen?`<div class="pct"><div class="fill ${cls}" style="width:${Math.min(a.maxPct,100)}%"></div></div>`:''}</td><td><span class="pill ${cls}">${a.status==='미설정'?'LIMIT 미설정':a.status}</span></td></tr>`}).join('') : '<tr><td colspan="10">해당 기준일의 최근 365일에 유효한 CREW 기록이 없습니다. 데이터 로딩 상태와 RAW 날짜를 확인해 주세요.</td></tr>';
-$('rows').querySelectorAll('.person').forEach(b=>b.onclick=()=>{activePerson=b.dataset.key;
-showDetails(results.find(p=>p.name.toLowerCase()===activePerson))});
-if(activePerson)showDetails(results.find(p=>p.name.toLowerCase()===activePerson));
+return `<tr data-name="${esc(p.name)}"><td>${esc(p.name)}</td><td>${p.kind==='pilot'?'Pilot':'Cabin/Other'}</td>${[7,28,365].map(n=>'<td>'+c(p.tot.duty[n])+'</td>').join('')}${[7,28,365].map(n=>'<td>'+c(p.tot.flight[n])+'</td>').join('')}<td>${a.seen?a.maxPct.toFixed(1)+'% <small>'+esc(a.top)+'</small>':'—'}${a.seen?`<div class="pct"><div class="fill ${cls}" style="width:${Math.min(a.maxPct,100)}%"></div></div>`:''}</td><td><span class="pill ${cls}">${a.status==='미설정'?'LIMIT 미설정':a.status}</span></td></tr>`}).join('') : '<tr><td colspan="10">해당 기준일의 최근 365일에 유효한 CREW 기록이 없습니다. 데이터 로딩 상태와 RAW 날짜를 확인해 주세요.</td></tr>';
+
 }
-function showDetails(p){if(!p){$('details').textContent='승무원을 선택하세요.';
-return}let d=p.detail.duty.filter(x=>x.end<=(SIMULATED_ASOF||Date.parse($('asof').value+'T00:00:00Z'))+86400000-1).slice(-30).reverse();
-$('details').innerHTML='<strong>'+esc(p.name)+'</strong> · '+p.kind+'<div class="tblwrap"><table><thead><tr><th>시작 UTC</th><th>종료 UTC</th><th>LEG</th><th>BLOCK</th><th>G/T</th><th>DUTY</th></tr></thead><tbody>'+d.map(x=>`<tr><td>${new Date(x.start).toISOString().slice(0,16).replace('T',' ')}</td><td>${new Date(x.end).toISOString().slice(0,16).replace('T',' ')}</td><td>${esc(x.legs.map(l=>l.from+'-'+l.to).join(', '))}</td><td>${hh(x.block)}</td><td>${hh(x.ground)}</td><td>${hh(x.duty)}</td></tr>`).join('')+'</tbody></table></div>';
-}
-function showTrips(){let groups=tripGroups(DATA.planned);
-$('trips').innerHTML=groups.map(g=>`<label class="trip"><input type="checkbox" data-trip="${esc(g.id)}" ${SELECTED.has(g.id)?'checked':''}><span><strong>${esc(g.route)}</strong><br><small>${new Date(g.start).toISOString().slice(0,16).replace('T',' ')} UTC · ${g.legs.length} LEG · ${esc(g.id)}</small></span></label>`).join('')||'<p class="hint">표시할 예정 비행이 없습니다.</p>';
-$('trips').querySelectorAll('input[data-trip]').forEach(el=>el.onchange=()=>{if(el.checked)SELECTED.add(el.dataset.trip);
-else SELECTED.delete(el.dataset.trip);
-refresh()});
+function showTrips(){
+ const groups=currentGroups();
+ $('trips').innerHTML=groups.map((g,i)=>`<label class="trip"><input type="radio" name="tripStep" value="${i+1}" ${STEP_INDEX===i+1?'checked':''}><span><strong>${i+1}. ${esc(g.route)}</strong><br><small>${new Date(g.start).toISOString().slice(0,16).replace('T',' ')} UTC · ${g.legs.length} LEG · ${esc(g.id)}</small></span></label>`).join('')||'<p class="hint">이 기종의 해석 가능한 미래 일정이 없습니다. WINDY 표기와 시간대를 확인하세요.</p>';
+ $('trips').querySelectorAll('input[name="tripStep"]').forEach(el=>el.onchange=()=>{STEP_INDEX=Number(el.value);showTrips();refresh();});
 }
 // 24-hour common-auth.js cache remains unchanged.
 // Additional Google ID credential is required for every private GAS API request.
@@ -687,7 +708,7 @@ async function load(){
     $('updated').textContent='Loaded '+data.meta.generatedAt+' UTC · Actual '+data.actual.length+' LEG / Planned '+data.planned.length+' LEG';
     const errors=[...(data.errors?.actual||[]).map(x=>'실제: '+x),...(data.errors?.planned||[]).map(x=>'예정: '+x)];
     if(errors.length){$('message').hidden=false;$('message').textContent='일부 기록 제외: '+errors.slice(0,12).join(' / ');}
-    SELECTED.clear();activePerson=null;showTrips();refresh();
+    ALL_CREW=buildPersonLegs(DATA.actual,[]).sort((a,b)=>a.name.localeCompare(b.name));STEP_INDEX=0;CREW_SELECTED.clear();showCrewChoices();showTrips();refresh();
     if(!data.actual.length){authError('최근 365일에 변환된 실제 LEG가 0건입니다. GAS RAW 날짜 파싱과 조회 기간을 확인하세요.');}
   }catch(error){authError('데이터 로딩 오류: '+error.message);$('updated').textContent='Failed';}
   finally{loading=false;}
@@ -703,13 +724,9 @@ $('asof').min=new Date(Date.now()-365*86400000).toISOString().slice(0,10);
 $('asof').max=new Date(Date.now()+365*86400000).toISOString().slice(0,10);
 ['asof','kind','threshold'].forEach(id=>$(id).addEventListener('change',refresh));
 $('reload').onclick=load;
-$('selectall').onclick=()=>{if(!DATA)return;
-tripGroups(DATA.planned).forEach(g=>SELECTED.add(g.id));
-showTrips();
-refresh()};
-$('clear').onclick=()=>{SELECTED.clear();
-showTrips();
-refresh()};
+$('clear').onclick=()=>{STEP_INDEX=0;showTrips();refresh();};
+$('aircraftTab').onchange=()=>{ACTIVE_AIRCRAFT=$('aircraftTab').value;STEP_INDEX=0;showTrips();refresh();};
+$('crewSearch').addEventListener('input',showCrewChoices);
 window.addEventListener('error', function(event) {
   if (!DATA && event.message) authError('프론트엔드 오류: ' + event.message);
 });
