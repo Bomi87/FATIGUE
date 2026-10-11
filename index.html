@@ -370,11 +370,11 @@ footer {
    <div class="layout">
     <section class="panel">
      <h2>
-      예정 TRIP 선택 (실제 기록에 포함된 LEG는 제외)
+      예정 LEG 선택 (실제 운항과 중복되는 LEG는 제외)
      </h2>
      <div class="controls" style="margin-bottom:10px">
       <select id="aircraftTab"><option value="ACJ">ACJ</option><option value="G650">G650</option></select>
-      <span class="sub" id="simInstruction">스케줄 번호를 클릭하면 그 스케줄까지 자동 누적</span>
+      <span class="sub" id="simInstruction">LEG 번호를 클릭하면 1번부터 선택 LEG까지 자동 누적</span>
       <button id="clear">실제 운항만 보기</button>
       <span class="sub" id="selectedSummary">
       </span>
@@ -391,7 +391,7 @@ footer {
    </div>
    <section class="panel">
     <h2>
-     CREW 누적시간 · 실제 + 선택 예정 TRIP
+     CREW 누적시간 · 실제 + 선택 예정 LEG
     </h2>
     <div class="tblwrap" id="crewTableWrap">
      <table id="crewTable">
@@ -493,11 +493,6 @@ function dedupeKey(l){return [l.dateUTC,l.from,l.to,(l.flight||'').toUpperCase()
 function duplicates(actual,p){let same=actual.filter(a=>a.from===p.from&&a.to===p.to&&Math.abs(a.dep-p.dep)<=90*60000&&Math.abs(a.block-p.block)<=45);
 return same.filter(a=>(a.flight&&p.flight&&a.flight.toUpperCase()===p.flight.toUpperCase())||(a.aircraft&&p.aircraft&&((a.aircraft.toUpperCase()===p.aircraft.toUpperCase())||(p.aircraft==='ACJ'&&a.aircraft.toUpperCase()==='HL8080')||(p.aircraft==='G650'&&a.aircraft.toUpperCase()==='HL8372'))));
 }
-function tripGroups(legs){let by=new Map();
-for(const l of legs){let k=l.trip?('TRIP:'+l.trip):('DAY:'+l.dateUTC+':'+l.aircraft);
-if(!by.has(k))by.set(k,[]);
-by.get(k).push(l)}
-return [...by.entries()].map(([id,a])=>({id,legs:a.sort(cmp),start:Math.min(...a.map(l=>l.dep)),end:Math.max(...a.map(l=>l.arr)),route:a.map(l=>l.from).concat(a.at(-1).to).join(' → ')})).sort((a,b)=>a.start-b.start)}
 function buildPersonLegs(actual,plans){let map=new Map();
 for(const l of [...actual,...plans])for(const p of l.people){let key=p.name.toLowerCase();
 if(!map.has(key))map.set(key,{name:p.name,kind:p.kind,legs:[]});
@@ -531,9 +526,12 @@ top=category+' '+days+'일';
 }}}
 return {seen,maxPct,top,status:!seen?'미설정':maxPct>100?'초과':maxPct>=threshold?'접근':'정상'};
 }
-function currentGroups(){return tripGroups(DATA?.planned||[]).filter(g=>g.legs[0]?.aircraft===ACTIVE_AIRCRAFT);}
+function currentLegs(){
+ // A scheduled flight is always independently selectable, regardless of route or TRIP.
+ return (DATA?.planned||[]).filter(l=>l.aircraft===ACTIVE_AIRCRAFT).slice().sort(cmp);
+}
 function selectPlans(){
- const groups=currentGroups(), chosen=groups.slice(0,STEP_INDEX).flatMap(g=>g.legs),kept=[],skipped=[];
+ const chosen=currentLegs().slice(0,STEP_INDEX),kept=[],skipped=[];
  for(const leg of chosen){if(duplicates(DATA.actual,leg).length){skipped.push(leg);continue;}
   const people=[...CREW_SELECTED].map(key=>{const p=ALL_CREW.find(q=>q.name.toLowerCase()===key);
    return p?{name:p.name,kind:p.kind,flightEligible:p.kind==='pilot'}:null;}).filter(Boolean);
@@ -565,7 +563,7 @@ function showCrewChoices(){
 }
 function refresh(){if(!DATA)return;
 const selectedLegs=selectPlans().kept;
-// Simulate at the end of the selected future trip, not solely at today's date.
+// Simulate as of the selected LEG end, including all preceding selected LEGs.
 const inputAsOf=Date.parse($('asof').value+'T00:00:00Z');
 const latestSelected=selectedLegs.length?Math.max(...selectedLegs.map(l=>l.arr)):0;
 const asof=Math.max(inputAsOf,latestSelected?Date.parse(utcDate(latestSelected)+'T00:00:00Z'):inputAsOf);
@@ -576,7 +574,7 @@ const {kept,skipped}=selectPlans(),all=buildPersonLegs(DATA.actual,kept);
 // Future simulation legs cannot make an otherwise inactive person visible.
 const recentActual=recentActualCrewKeys();
 let results=all.filter(p=>recentActual.has(p.name.toLowerCase())).map(p=>({...p,...compute(p,asof),assessment:null}));
-// For future trips, flag a limit reached at ANY duty end in the selected trip.
+// Check rolling-limit peaks at EVERY included scheduled LEG end, not just the final one.
 results.forEach(p=>{
  p.assessment=assess(p,p.tot,threshold);
  const original=p.assessment;
@@ -594,14 +592,15 @@ $('count').textContent=visible.length;
 $('exceed').textContent=visible.filter(p=>p.assessment.status==='초과').length;
 $('near').textContent=visible.filter(p=>p.assessment.status==='접근').length;
 $('unconfigured').textContent=visible.filter(p=>p.assessment.status==='미설정').length;
-$('selectedSummary').textContent=`${ACTIVE_AIRCRAFT} 스케줄 1~${STEP_INDEX} 누적 · CREW ${CREW_SELECTED.size}명 · 신규 ${kept.length} LEG · 중복 제외 ${skipped.length} LEG · ${utcDate(asof)} UTC`; 
+$('selectedSummary').textContent=`${ACTIVE_AIRCRAFT} LEG 1~${STEP_INDEX} 누적 · CREW ${CREW_SELECTED.size}명 · 신규 ${kept.length} LEG · 실제 중복 제외 ${skipped.length} LEG · ${utcDate(asof)} UTC`; 
 $('rows').innerHTML=visible.length ? visible.map(p=>{let a=p.assessment,cls=a.status==='초과'?'bad':a.status==='접근'?'warn':a.status==='정상'?'ok':'unknown',c=d=>d===null?'—':hh(d);
 return `<tr data-name="${esc(p.name)}"><td>${esc(p.name)}</td><td>${p.kind==='pilot'?'Pilot':'Cabin/Other'}</td>${[7,28,365].map(n=>'<td>'+c(p.tot.duty[n])+'</td>').join('')}${[7,28,365].map(n=>'<td>'+c(p.tot.flight[n])+'</td>').join('')}<td>${a.seen?a.maxPct.toFixed(1)+'% <small>'+esc(a.top)+'</small>':'—'}${a.seen?`<div class="pct"><div class="fill ${cls}" style="width:${Math.min(a.maxPct,100)}%"></div></div>`:''}</td><td><span class="pill ${cls}">${a.status==='미설정'?'LIMIT 미설정':a.status}</span></td></tr>`}).join('') : '<tr><td colspan="10">해당 기준일의 최근 365일에 유효한 CREW 기록이 없습니다. 데이터 로딩 상태와 RAW 날짜를 확인해 주세요.</td></tr>';
 
 }
 function showTrips(){
- const groups=currentGroups();
- $('trips').innerHTML=groups.map((g,i)=>`<label class="trip"><input type="radio" name="tripStep" value="${i+1}" ${STEP_INDEX===i+1?'checked':''}><span><strong>${i+1}. ${esc(g.route)}</strong><br><small>${new Date(g.start).toISOString().slice(0,16).replace('T',' ')} UTC · ${g.legs.length} LEG · ${esc(g.id)}</small></span></label>`).join('')||'<p class="hint">이 기종의 해석 가능한 미래 일정이 없습니다. WINDY 표기와 시간대를 확인하세요.</p>';
+ const legs=currentLegs();
+ if(STEP_INDEX>legs.length)STEP_INDEX=legs.length;
+ $('trips').innerHTML=legs.map((l,i)=>`<label class="trip"><input type="radio" name="tripStep" value="${i+1}" ${STEP_INDEX===i+1?'checked':''}><span><strong>${i+1}. ${esc(l.from)} → ${esc(l.to)}</strong><br><small>${new Date(l.dep).toISOString().slice(0,16).replace('T',' ')} UTC 출발 · ${new Date(l.arr).toISOString().slice(0,16).replace('T',' ')} UTC 도착 · BLOCK ${hh(l.block)}</small></span></label>`).join('')||'<p class="hint">이 기종의 해석 가능한 미래 LEG가 없습니다. WINDY 표기와 시간대를 확인하세요.</p>';
  $('trips').querySelectorAll('input[name="tripStep"]').forEach(el=>el.onchange=()=>{STEP_INDEX=Number(el.value);showTrips();refresh();});
 }
 // 24-hour common-auth.js cache remains unchanged.
