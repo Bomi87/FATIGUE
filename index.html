@@ -122,7 +122,8 @@ input[type=checkbox] {
     color:#aab8cf;
 }
 .tblwrap {
-    overflow:auto;
+    /* Keep the table in the document scroll context so the header sticks to the viewport. */
+    overflow:visible;
 }
 table {
     border-collapse:collapse;
@@ -140,6 +141,20 @@ th {
     background:#14243a;
     position:sticky;
     top:0;
+    z-index:30;
+    box-shadow:0 2px 0 #283b55;
+}
+.sort-head {
+    cursor:pointer;
+    user-select:none;
+}
+.sort-head:hover, .sort-head:focus-visible {
+    color:#ffffff;
+    background:#203956;
+    outline-offset:-2px;
+}
+.sort-head[aria-sort="descending"], .sort-head[aria-sort="ascending"] {
+    color:#ffffff;
 }
 tr:hover {
     background:#1a304b;
@@ -361,38 +376,38 @@ footer {
     <h2>
      CREW 누적시간 · 실제 + 선택 예정 TRIP
     </h2>
-    <div class="tblwrap">
-     <table>
+    <div class="tblwrap" id="crewTableWrap">
+     <table id="crewTable">
       <thead>
        <tr>
-        <th>
+        <th class="sort-head" data-sort="name" tabindex="0" role="button" aria-sort="none" title="클릭하여 정렬">
          CREW
         </th>
-        <th>
+        <th class="sort-head" data-sort="kind" tabindex="0" role="button" aria-sort="none" title="클릭하여 정렬">
          유형
         </th>
-        <th>
+        <th class="sort-head" data-sort="duty7" tabindex="0" role="button" aria-sort="none" title="클릭하여 정렬">
          Duty 7일
         </th>
-        <th>
+        <th class="sort-head" data-sort="duty28" tabindex="0" role="button" aria-sort="none" title="클릭하여 정렬">
          Duty 28일
         </th>
-        <th>
+        <th class="sort-head" data-sort="duty365" tabindex="0" role="button" aria-sort="none" title="클릭하여 정렬">
          Duty 365일
         </th>
-        <th>
+        <th class="sort-head" data-sort="flight7" tabindex="0" role="button" aria-sort="none" title="클릭하여 정렬">
          Flight 7일
         </th>
-        <th>
+        <th class="sort-head" data-sort="flight28" tabindex="0" role="button" aria-sort="none" title="클릭하여 정렬">
          Flight 28일
         </th>
-        <th>
+        <th class="sort-head" data-sort="flight365" tabindex="0" role="button" aria-sort="none" title="클릭하여 정렬">
          Flight 365일
         </th>
-        <th>
+        <th class="sort-head" data-sort="usage" tabindex="0" role="button" aria-sort="none" title="클릭하여 정렬">
          최고 사용률
         </th>
-        <th>
+        <th class="sort-head" data-sort="status" tabindex="0" role="button" aria-sort="none" title="클릭하여 정렬">
          경고
         </th>
        </tr>
@@ -416,6 +431,39 @@ footer {
 'use strict';
 let DATA=null,SELECTED=new Set(),activePerson=null;
 let SIMULATED_ASOF=null;
+// Default: highest 365-day DUTY first. Header clicks choose the metric (largest first).
+let CREW_SORT_KEY='duty365', CREW_SORT_DIRECTION='desc';
+const SORT_KEYS=['name','kind','duty7','duty28','duty365','flight7','flight28','flight365','usage','status'];
+function crewSortValue(p,key){
+ if(key==='name')return p.name;
+ if(key==='kind')return p.kind;
+ if(key==='usage')return p.assessment?.seen ? p.assessment.maxPct : -Infinity;
+ if(key==='status')return ({'초과':4,'접근':3,'정상':2,'미설정':1})[p.assessment?.status]||0;
+ const m=/^(duty|flight)(7|28|365)$/.exec(key);
+ if(m)return p.tot[m[1]][Number(m[2])] ?? -Infinity;
+ return 0;
+}
+function compareCrew(a,b){
+ const x=crewSortValue(a,CREW_SORT_KEY),y=crewSortValue(b,CREW_SORT_KEY);
+ let c=(typeof x==='string'&&typeof y==='string')?x.localeCompare(y):(x<y?-1:x>y?1:0);
+ if(c!==0)return CREW_SORT_DIRECTION==='desc'?-c:c;
+ return (b.tot.duty[365]??0)-(a.tot.duty[365]??0)||a.name.localeCompare(b.name);
+}
+function updateSortHeaders(){
+ document.querySelectorAll('#crewTable thead th[data-sort]').forEach(th=>{
+   const active=th.dataset.sort===CREW_SORT_KEY;
+   th.setAttribute('aria-sort',active?(CREW_SORT_DIRECTION==='desc'?'descending':'ascending'):'none');
+   const marker=th.querySelector('.sort-arrow');
+   if(marker)marker.textContent=active?(CREW_SORT_DIRECTION==='desc'?' ▼':' ▲'):'';
+ });
+}
+function setCrewSort(key){
+ if(!SORT_KEYS.includes(key))return;
+ if(key===CREW_SORT_KEY)CREW_SORT_DIRECTION=CREW_SORT_DIRECTION==='desc'?'asc':'desc';
+ else { CREW_SORT_KEY=key; CREW_SORT_DIRECTION=(key==='name'||key==='kind')?'asc':'desc'; }
+ refresh();
+}
+
 const $=id=>document.getElementById(id),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const hh=m=>{let sign=m<0?'-':'';
 m=Math.abs(Math.round(m));
@@ -480,7 +528,14 @@ const asof=Math.max(inputAsOf,latestSelected?Date.parse(utcDate(latestSelected)+
 SIMULATED_ASOF=asof;
 const threshold=Math.min(100,Math.max(1,Number($('threshold').value)||85));
 const {kept,skipped}=selectPlans(),all=buildPersonLegs(DATA.actual,kept);
-let results=all.map(p=>({...p,...compute(p,asof),assessment:null}));
+// Visibility: only crew with a completed ACTUAL LEG in the last 3 calendar months (relative to today).
+// Future simulation legs cannot make an otherwise inactive person visible.
+const today=new Date();
+const endOfTargetMonth=new Date(Date.UTC(today.getUTCFullYear(),today.getUTCMonth()-2,0)).getUTCDate();
+const cutoff3m=Date.UTC(today.getUTCFullYear(),today.getUTCMonth()-3,Math.min(today.getUTCDate(),endOfTargetMonth));
+const recentActual=new Set();
+for(const l of DATA.actual){if(l.arr>=cutoff3m&&l.arr<=Date.now())for(const person of l.people)recentActual.add(person.name.toLowerCase());}
+let results=all.filter(p=>recentActual.has(p.name.toLowerCase())).map(p=>({...p,...compute(p,asof),assessment:null}));
 // For future trips, flag a limit reached at ANY duty end in the selected trip.
 results.forEach(p=>{
  p.assessment=assess(p,p.tot,threshold);
@@ -492,7 +547,8 @@ results.forEach(p=>{
    if(a.maxPct>original.maxPct){p.assessment=a;}
  }
 });
-results.sort((a,b)=>({초과:0,접근:1,정상:2,미설정:3}[a.assessment.status]-{초과:0,접근:1,정상:2,미설정:3}[b.assessment.status])||(b.assessment.maxPct-a.assessment.maxPct)||a.name.localeCompare(b.name));
+results.sort(compareCrew);
+updateSortHeaders();
 const visible=results.filter(p=>($('kind').value==='all'||p.kind===$('kind').value));
 $('count').textContent=visible.length;
 $('exceed').textContent=visible.filter(p=>p.assessment.status==='초과').length;
@@ -636,6 +692,12 @@ async function load(){
   }catch(error){authError('데이터 로딩 오류: '+error.message);$('updated').textContent='Failed';}
   finally{loading=false;}
 }
+document.querySelectorAll('#crewTable thead th[data-sort]').forEach(th=>{
+ th.insertAdjacentHTML('beforeend','<span class="sort-arrow" aria-hidden="true"></span>');
+ th.addEventListener('click',()=>setCrewSort(th.dataset.sort));
+ th.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();setCrewSort(th.dataset.sort);}});
+});
+updateSortHeaders();
 $('asof').value=new Date().toISOString().slice(0,10);
 $('asof').min=new Date(Date.now()-365*86400000).toISOString().slice(0,10);
 $('asof').max=new Date(Date.now()+365*86400000).toISOString().slice(0,10);
