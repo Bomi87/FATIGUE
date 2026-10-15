@@ -259,6 +259,9 @@ footer {
     }
 }
 
+/* Only cells nearing or reaching their verified configured time limits are highlighted. */
+#crewTable td.time-alert-warn { background:rgba(255,145,35,.23); color:#ffb15f; font-weight:800; box-shadow:inset 0 0 0 1px rgba(255,145,35,.52); }
+#crewTable td.time-alert-danger { background:rgba(243,123,135,.22); color:#ff9ba5; font-weight:800; box-shadow:inset 0 0 0 1px rgba(243,123,135,.50); }
 /* Compact reference limits; informational only, not the calculation engine. */
 .limit-reference {
     display:flex;
@@ -334,12 +337,6 @@ footer {
       </option>
      </select>
     </div>
-    <div class="field">
-     <label>
-      경고 임계치 (%)
-     </label>
-     <input id="threshold" max="100" min="1" type="number" value="85"/>
-    </div>
     <button class="primary" id="reload">
      새로고침
     </button>
@@ -355,7 +352,7 @@ footer {
     </div>
     <div class="card">
      <div class="muted">
-      LIMIT 초과
+      한도 경계
      </div>
      <div class="val bad" id="exceed">
       —
@@ -363,7 +360,7 @@ footer {
     </div>
     <div class="card">
      <div class="muted">
-      LIMIT 접근
+      한도 주의
      </div>
      <div class="val warn" id="near">
       —
@@ -371,7 +368,7 @@ footer {
     </div>
     <div class="card">
      <div class="muted">
-      LIMIT 미설정 인원
+      기준 미설정 인원
      </div>
      <div class="val" id="unconfigured">
       —
@@ -432,12 +429,6 @@ footer {
         <th class="sort-head" data-sort="flight365" tabindex="0" role="button" aria-sort="none" title="클릭하여 정렬">
          Flight 365일
         </th>
-        <th class="sort-head" data-sort="usage" tabindex="0" role="button" aria-sort="none" title="클릭하여 정렬">
-         최고 사용률
-        </th>
-        <th class="sort-head" data-sort="status" tabindex="0" role="button" aria-sort="none" title="클릭하여 정렬">
-         경고
-        </th>
         <th>산출근거</th>
        </tr>
       </thead>
@@ -446,12 +437,12 @@ footer {
      </table>
     </div>
     <p class="hint">
-     시간 표기 HH:MM · 통계 기준: 각 DUTY 완료 시각/각 LEG 완료 시각이 조회 시점 이전이며, 이동식 기간 내에 포함된 기록. 경계를 걸치는 비행시간은 단순 종료시각 귀속 처리하므로 법정 정밀 산정과 차이가 날 수 있습니다.
+     시간 표기 HH:MM · 주황색: 주의(한도 80% 이상 90% 미만), 빨간색: 경계(한도 90% 이상) · 통계 기준: 각 DUTY 완료 시각/각 LEG 완료 시각이 조회 시점 이전이며, 이동식 기간 내에 포함된 기록. 경계를 걸치는 비행시간은 단순 종료시각 귀속 처리하므로 법정 정밀 산정과 차이가 날 수 있습니다.
     </p>
    </section>
   </main>
   <footer>
-   근무시간 = 연속 DUTY의 (BLOCK + GROUND) + 01:30. 법적 한도 미입력 시 ‘LIMIT 미설정’으로 표시합니다. G/T 11:30 이상 DUTY 분리 규칙은 법정 휴식 충족 판정과 별개입니다.
+   근무시간 = 연속 DUTY의 (BLOCK + GROUND) + 01:30. 적용 가능한 기준이 없는 CREW는 ‘기준 미설정’으로 표시합니다. G/T 11:30 이상 DUTY 분리 규칙은 법정 휴식 충족 판정과 별개입니다.
   </footer>
   </div>
   <script async="" defer="" src="https://accounts.google.com/gsi/client">
@@ -463,12 +454,12 @@ let SIMULATED_ASOF=null;
 let CURRENT_RESULTS=[];
 // Default: highest 365-day DUTY first. Header clicks choose the metric (largest first).
 let CREW_SORT_KEY='duty365', CREW_SORT_DIRECTION='desc';
-const SORT_KEYS=['name','kind','duty7','duty28','duty365','flight7','flight28','flight365','usage','status'];
+const SORT_KEYS=['name','kind','duty7','duty28','duty365','flight7','flight28','flight365'];
 function crewSortValue(p,key){
  if(key==='name')return p.name;
  if(key==='kind')return p.kind;
  if(key==='usage')return p.assessment?.seen ? p.assessment.maxPct : -Infinity;
- if(key==='status')return ({'초과':4,'접근':3,'정상':2,'미설정':1})[p.assessment?.status]||0;
+ if(key==='status')return ({'경계':4,'주의':3,'정상':2,'미설정':1})[p.assessment?.status]||0;
  const m=/^(duty|flight)(7|28|365)$/.exec(key);
  if(m)return p.tot[m[1]][Number(m[2])] ?? -Infinity;
  return 0;
@@ -539,7 +530,7 @@ let pct=t[category][days]/(Number(limit)*60)*100;
 if(pct>maxPct){maxPct=pct;
 top=category+' '+days+'일';
 }}}
-return {seen,maxPct,top,status:!seen?'미설정':maxPct>100?'초과':maxPct>=threshold?'접근':'정상'};
+return {seen,maxPct,top,status:!seen?'미설정':maxPct>=90?'경계':maxPct>=80?'주의':'정상'};
 }
 function currentLegs(){
  // A scheduled flight is always independently selectable, regardless of route or TRIP.
@@ -583,7 +574,7 @@ const inputAsOf=Date.parse($('asof').value+'T00:00:00Z');
 const latestSelected=selectedLegs.length?Math.max(...selectedLegs.map(l=>l.arr)):0;
 const asof=Math.max(inputAsOf,latestSelected?Date.parse(utcDate(latestSelected)+'T00:00:00Z'):inputAsOf);
 SIMULATED_ASOF=asof;
-const threshold=Math.min(100,Math.max(1,Number($('threshold').value)||85));
+const threshold=80; // Fixed: 80% caution, 90% danger
 const {kept,skipped}=selectPlans(),all=buildPersonLegs(DATA.actual,kept);
 // Visibility: only crew with a completed ACTUAL LEG in the last 3 calendar months (relative to today).
 // Future simulation legs cannot make an otherwise inactive person visible.
@@ -605,12 +596,23 @@ results.sort(compareCrew);
 updateSortHeaders();
 const visible=results.filter(p=>($('kind').value==='all'||p.kind===$('kind').value));
 $('count').textContent=visible.length;
-$('exceed').textContent=visible.filter(p=>p.assessment.status==='초과').length;
-$('near').textContent=visible.filter(p=>p.assessment.status==='접근').length;
+$('exceed').textContent=visible.filter(p=>p.assessment.status==='경계').length;
+$('near').textContent=visible.filter(p=>p.assessment.status==='주의').length;
 $('unconfigured').textContent=visible.filter(p=>p.assessment.status==='미설정').length;
 $('selectedSummary').textContent=`${ACTIVE_AIRCRAFT} LEG 1~${STEP_INDEX} 누적 · CREW ${CREW_SELECTED.size}명 · 신규 ${kept.length} LEG · 실제 중복 제외 ${skipped.length} LEG · ${utcDate(asof)} UTC`; 
-$('rows').innerHTML=visible.length ? visible.map(p=>{let a=p.assessment,cls=a.status==='초과'?'bad':a.status==='접근'?'warn':a.status==='정상'?'ok':'unknown',c=d=>d===null?'—':hh(d);
-return `<tr data-name="${esc(p.name)}"><td>${esc(p.name)}</td><td>${p.kind==='pilot'?'Pilot':'Cabin/Other'}</td>${[7,28,365].map(n=>'<td>'+c(p.tot.duty[n])+'</td>').join('')}${[7,28,365].map(n=>'<td>'+c(p.tot.flight[n])+'</td>').join('')}<td>${a.seen?a.maxPct.toFixed(1)+'% <small>'+esc(a.top)+'</small>':'—'}${a.seen?`<div class="pct"><div class="fill ${cls}" style="width:${Math.min(a.maxPct,100)}%"></div></div>`:''}</td><td><span class="pill ${cls}">${a.status==='미설정'?'LIMIT 미설정':a.status}</span></td><td><button type="button" class="crew-export-btn" data-export-crew="${esc(p.name)}" title="${esc(p.name)} 산출근거 엑셀 다운로드">엑셀추출</button></td></tr>`}).join('') : '<tr><td colspan="11">해당 기준일의 최근 365일에 유효한 CREW 기록이 없습니다. 데이터 로딩 상태와 RAW 날짜를 확인해 주세요.</td></tr>';
+$('rows').innerHTML=visible.length ? visible.map(p=>{
+ const timeCell=(category,days)=>{
+   const minutes=p.tot[category]?.[days];
+   if(minutes===null||minutes===undefined)return '<td>—</td>';
+   const limit=Number(DATA.meta.limits?.[p.kind]?.[category]?.[days]);
+   // Missing limits remain uncolored. Never interpret an unconfigured limit as compliant.
+   const fraction=Number.isFinite(limit)&&limit>0?minutes/(limit*60):null;
+   const level=fraction!==null&&fraction>=0.9?'time-alert-danger':fraction!==null&&fraction>=0.8?'time-alert-warn':'';
+   const label=level==='time-alert-danger'?'경계':level==='time-alert-warn'?'주의':'';
+   return `<td class="${level}" ${label?`title="${label} · 기준 ${hh(limit*60)}"`:''}>${hh(minutes)}</td>`;
+ };
+ return `<tr data-name="${esc(p.name)}"><td>${esc(p.name)}</td><td>${p.kind==='pilot'?'Pilot':'Cabin/Other'}</td>${[7,28,365].map(n=>timeCell('duty',n)).join('')}${[7,28,365].map(n=>timeCell('flight',n)).join('')}<td><button type="button" class="crew-export-btn" data-export-crew="${esc(p.name)}" title="${esc(p.name)} 산출근거 엑셀 다운로드">엑셀추출</button></td></tr>`;
+}).join('') : '<tr><td colspan="9">해당 기준일의 최근 365일에 유효한 CREW 기록이 없습니다. 데이터 로딩 상태와 RAW 날짜를 확인해 주세요.</td></tr>';
 
 }
 function showTrips(){
@@ -763,7 +765,7 @@ const exportDate = ms => new Date(ms).toISOString().replace('T',' ').slice(0,16)
 function xmlEscape(s){return String(s??'').replace(/[<>&"']/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&apos;'}[c]));}
 function spreadsheetXml(rows){
   return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'+
-    '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>'+rows.map((row,i)=>
+    '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/><selection pane="bottomLeft" activeCell="A2" sqref="A2"/></sheetView></sheetViews><sheetData>'+rows.map((row,i)=>
        '<row r="'+(i+1)+'">'+row.map((value,j)=>{
         const ref=excelCol(j+1)+(i+1);
         // All cells as literal strings to protect against Excel formula injection.
@@ -835,7 +837,7 @@ updateSortHeaders();
 $('asof').value=new Date().toISOString().slice(0,10);
 $('asof').min=new Date(Date.now()-365*86400000).toISOString().slice(0,10);
 $('asof').max=new Date(Date.now()+365*86400000).toISOString().slice(0,10);
-['asof','kind','threshold'].forEach(id=>$(id).addEventListener('change',refresh));
+['asof','kind'].forEach(id=>$(id).addEventListener('change',refresh));
 $('reload').onclick=load;
 $('clear').onclick=()=>{STEP_INDEX=0;showTrips();refresh();};
 $('aircraftTab').onchange=()=>{ACTIVE_AIRCRAFT=$('aircraftTab').value;STEP_INDEX=0;showTrips();refresh();};
