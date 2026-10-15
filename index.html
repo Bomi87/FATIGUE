@@ -786,17 +786,19 @@ function exportCrewExcel(name){
   const end=SIMULATED_ASOF+86400000-1, windows=DATA.meta.windows;
   const windowLabel=(endTime,days)=>endTime>end-days*86400000&&endTime<=end?'Y':'';
   const summary=[['CREW',p.name],['유형',p.kind==='pilot'?'Pilot':'Cabin/Other'],['조회 기준 UTC',utcDate(SIMULATED_ASOF)],['데이터 생성 UTC',DATA.meta.generatedAt],['DUTY 분리 G/T',String(DATA.meta.minGroundBreakHours)+'시간 이상'],['DUTY 추가시간',hh(DATA.meta.extraDutyMinutes)],['계산 방식','LEG 도착시각 기준 Flight / 연속 DUTY 마지막 LEG 도착시각 기준 Duty'],[],['항목','7일','28일','365일'],['Duty',...windows.map(d=>hh(p.tot.duty[d]||0))],['Flight',...windows.map(d=>p.tot.flight[d]===null?'N/A':hh(p.tot.flight[d]))]];
-  const dutyRows=[['DUTY #','시작 UTC','종료 UTC','LEG 수','BLOCK 합계','G/T 합계','추가시간','DUTY 합계','7일 포함','28일 포함','365일 포함','LEG 경로']];
-  const legRows=[['DUTY #','LEG #','구분','일자 UTC','출발지','도착지','출발 UTC','도착 UTC','BLOCK','직전 LEG 도착 후 G/T','Duty 계산 포함 G/T','Pilot Flight 산입','Flight 7일','Flight 28일','Flight 365일','DUTY 7일','DUTY 28일','DUTY 365일','항공기','TRIP','LEG NO','원본 행']];
+  // Display the timeline in working order: Briefing -> BLOCK -> G/T.
+  // G/T belongs to the PRECEDING leg. Do not include the break between DUTYs.
+  const dutyRows=[['DUTY #','시작 UTC','종료 UTC','LEG 수','브리핑','BLOCK 합계','G/T 합계','DUTY 합계','7일 포함','28일 포함','365일 포함','LEG 경로']];
+  const legRows=[['DUTY #','LEG #','구분','일자 UTC','출발지','도착지','출발 UTC','도착 UTC','브리핑','BLOCK','G/T (해당 LEG 이후)','DUTY 7일','DUTY 28일','DUTY 365일','Pilot Flight 산입','Flight 7일','Flight 28일','Flight 365일','항공기','TRIP','LEG NO','원본 행']];
   p.detail.duty.forEach((d,idx)=>{
     const no=idx+1;
-    dutyRows.push([no,exportDate(d.start),exportDate(d.end),d.legs.length,hh(d.block),hh(d.ground),hh(DATA.meta.extraDutyMinutes),hh(d.duty),...windows.map(n=>windowLabel(d.end,n)),d.legs.map(l=>l.from+'-'+l.to).join(' / ')]);
+    dutyRows.push([no,exportDate(d.start),exportDate(d.end),d.legs.length,hh(DATA.meta.extraDutyMinutes),hh(d.block),hh(d.ground),hh(d.duty),...windows.map(n=>windowLabel(d.end,n)),d.legs.map(l=>l.from+'-'+l.to).join(' / ')]);
     const sorted=d.legs.slice().sort(cmp);
     sorted.forEach((l,i)=>{
-      const previous=i?sorted[i-1]:null;
-      const gap=previous?Math.max(0,Math.round((l.dep-previous.arr)/60000)):0;
+      const next=i+1<sorted.length?sorted[i+1]:null;
+      const groundAfter=next?Math.max(0,Math.round((next.dep-l.arr)/60000)):null;
       const eligible=p.kind==='pilot'&&l.people.some(q=>q.name.toLowerCase()===p.name.toLowerCase()&&q.kind==='pilot'&&q.flightEligible);
-      legRows.push([no,i+1,l.source==='actual'?'실제':'예정',utcDate(l.dep),l.from,l.to,exportDate(l.dep),exportDate(l.arr),hh(l.block),previous?hh(gap):'—',previous?hh(gap):'00:00',eligible?'Y':'N',...windows.map(n=>eligible?windowLabel(l.arr,n):''),...windows.map(n=>windowLabel(d.end,n)),l.aircraft||'',l.trip||'',l.legNo||'',l.row||'']);
+      legRows.push([no,i+1,l.source==='actual'?'실제':'예정',utcDate(l.dep),l.from,l.to,exportDate(l.dep),exportDate(l.arr),i===0?hh(DATA.meta.extraDutyMinutes):'—',hh(l.block),next?hh(groundAfter):'—',...windows.map(n=>windowLabel(d.end,n)),eligible?'Y':'N',...windows.map(n=>eligible?windowLabel(l.arr,n):''),l.aircraft||'',l.trip||'',l.legNo||'',l.row||'']);
     });
   });
   const blob=createXlsx([['요약',summary],['DUTY 근거',dutyRows],['LEG 상세',legRows]]);
