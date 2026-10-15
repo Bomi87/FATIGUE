@@ -457,7 +457,7 @@ let CREW_SORT_KEY='duty365', CREW_SORT_DIRECTION='desc';
 const SORT_KEYS=['name','kind','duty7','duty28','duty365','flight7','flight28','flight365'];
 function crewSortValue(p,key){
  if(key==='name')return p.name;
- if(key==='kind')return p.kind;
+ if(key==='kind')return crewPosition(p);
  if(key==='usage')return p.assessment?.seen ? p.assessment.maxPct : -Infinity;
  if(key==='status')return ({'경계':4,'주의':3,'정상':2,'미설정':1})[p.assessment?.status]||0;
  const m=/^(duty|flight)(7|28|365)$/.exec(key);
@@ -492,6 +492,10 @@ return sign+String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2
 const utcDate=ms=>new Date(ms).toISOString().slice(0,10);
 // Airport display/export: preserve only the leading 4-character ICAO code.
 const icaoOnly=v=>{const m=String(v??'').trim().toUpperCase().match(/^([A-Z]{4})(?=$|[^A-Z])/);return m?m[1]:String(v??'').trim();};
+function crewPosition(person){
+ const key=String(person?.name||'').trim().replace(/\s+/g,' ').toUpperCase();
+ return DATA?.crewPositions?.[key] || (person?.kind==='pilot'?'조종':'객실/기타');
+}
 const cmp=(a,b)=>a.dep-b.dep;
 function dedupeKey(l){return [l.dateUTC,l.from,l.to,(l.flight||'').toUpperCase(),(l.aircraft||'').toUpperCase()].join('|')}
 // Do not discard a flight merely because route/date matches. Strong match needs flight number or aircraft,
@@ -564,7 +568,7 @@ function showCrewChoices(){
  // Inactive people must not remain assigned invisibly after a reload.
  for(const key of CREW_SELECTED)if(!active.has(key))CREW_SELECTED.delete(key);
  const names=ALL_CREW.filter(p=>active.has(p.name.toLowerCase())&&p.name.toLowerCase().includes(($('crewSearch').value||'').trim().toLowerCase()));
- $('crewChoices').innerHTML=names.map(p=>`<label class="trip"><input type="checkbox" data-crew="${esc(p.name.toLowerCase())}" ${CREW_SELECTED.has(p.name.toLowerCase())?'checked':''}><span>${esc(p.name)} <small>(${p.kind})</small></span></label>`).join('')||'<p class="hint">CREW가 없습니다.</p>';
+ $('crewChoices').innerHTML=names.map(p=>`<label class="trip"><input type="checkbox" data-crew="${esc(p.name.toLowerCase())}" ${CREW_SELECTED.has(p.name.toLowerCase())?'checked':''}><span>${esc(p.name)} <small>(${esc(crewPosition(p))})</small></span></label>`).join('')||'<p class="hint">CREW가 없습니다.</p>';
  $('crewChoices').querySelectorAll('input[data-crew]').forEach(el=>el.onchange=()=>{if(el.checked)CREW_SELECTED.add(el.dataset.crew);else CREW_SELECTED.delete(el.dataset.crew);refresh();});
 }
 function refresh(){if(!DATA)return;
@@ -611,7 +615,7 @@ $('rows').innerHTML=visible.length ? visible.map(p=>{
    const label=level==='time-alert-danger'?'경계':level==='time-alert-warn'?'주의':'';
    return `<td class="${level}" ${label?`title="${label} · 기준 ${hh(limit*60)}"`:''}>${hh(minutes)}</td>`;
  };
- return `<tr data-name="${esc(p.name)}"><td>${esc(p.name)}</td><td>${p.kind==='pilot'?'Pilot':'Cabin/Other'}</td>${[7,28,365].map(n=>timeCell('duty',n)).join('')}${[7,28,365].map(n=>timeCell('flight',n)).join('')}<td><button type="button" class="crew-export-btn" data-export-crew="${esc(p.name)}" title="${esc(p.name)} 산출근거 엑셀 다운로드">엑셀추출</button></td></tr>`;
+ return `<tr data-name="${esc(p.name)}"><td>${esc(p.name)}</td><td>${esc(crewPosition(p))}</td>${[7,28,365].map(n=>timeCell('duty',n)).join('')}${[7,28,365].map(n=>timeCell('flight',n)).join('')}<td><button type="button" class="crew-export-btn" data-export-crew="${esc(p.name)}" title="${esc(p.name)} 산출근거 엑셀 다운로드">엑셀추출</button></td></tr>`;
 }).join('') : '<tr><td colspan="9">해당 기준일의 최근 365일에 유효한 CREW 기록이 없습니다. 데이터 로딩 상태와 RAW 날짜를 확인해 주세요.</td></tr>';
 
 }
@@ -799,7 +803,7 @@ function exportCrewExcel(name){
   const p=CURRENT_RESULTS.find(p=>p.name===name);if(!p||!DATA)return;
   const end=SIMULATED_ASOF+86400000-1, windows=DATA.meta.windows;
   const windowLabel=(endTime,days)=>endTime>end-days*86400000&&endTime<=end?'Y':'';
-  const summary=[['CREW',p.name],['유형',p.kind==='pilot'?'Pilot':'Cabin/Other'],['조회 기준 UTC',utcDate(SIMULATED_ASOF)],[],['항목','7일','28일','365일'],['Duty',...windows.map(d=>hh(p.tot.duty[d]||0))],['Flight',...windows.map(d=>p.tot.flight[d]===null?'N/A':hh(p.tot.flight[d]))]];
+  const summary=[['CREW',p.name],['직책',crewPosition(p)],['조회 기준 UTC',utcDate(SIMULATED_ASOF)],[],['항목','7일','28일','365일'],['Duty',...windows.map(d=>hh(p.tot.duty[d]||0))],['Flight',...windows.map(d=>p.tot.flight[d]===null?'N/A':hh(p.tot.flight[d]))]];
   // Display the timeline in working order: Briefing -> BLOCK -> G/T.
   // G/T belongs to the PRECEDING leg. Do not include the break between DUTYs.
   const dutyRows=[['DUTY #','시작 UTC','종료 UTC','LEG 수','브리핑','BLOCK 합계','G/T 합계','DUTY 합계','7일 포함','28일 포함','365일 포함','LEG 경로']];
