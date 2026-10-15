@@ -161,6 +161,15 @@ tr[data-name]:focus-visible { outline:2px solid #77aaff; outline-offset:-2px; }
 tr:hover {
     background:#1a304b;
 }
+.crew-export-btn {
+    padding:6px 11px;
+    font-size:12px;
+    font-weight:650;
+    white-space:nowrap;
+    background:#24529a;
+    border-color:#3868b2;
+}
+.crew-export-btn:hover {background:#326aba;}
 .pill {
     font-size:11px;
     padding:4px 8px;
@@ -429,6 +438,7 @@ footer {
         <th class="sort-head" data-sort="status" tabindex="0" role="button" aria-sort="none" title="클릭하여 정렬">
          경고
         </th>
+        <th>산출근거</th>
        </tr>
       </thead>
       <tbody id="rows">
@@ -489,6 +499,8 @@ const hh=m=>{let sign=m<0?'-':'';
 m=Math.abs(Math.round(m));
 return sign+String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0')};
 const utcDate=ms=>new Date(ms).toISOString().slice(0,10);
+// Airport display/export: preserve only the leading 4-character ICAO code.
+const icaoOnly=v=>{const m=String(v??'').trim().toUpperCase().match(/^([A-Z]{4})(?=$|[^A-Z])/);return m?m[1]:String(v??'').trim();};
 const cmp=(a,b)=>a.dep-b.dep;
 function dedupeKey(l){return [l.dateUTC,l.from,l.to,(l.flight||'').toUpperCase(),(l.aircraft||'').toUpperCase()].join('|')}
 // Do not discard a flight merely because route/date matches. Strong match needs flight number or aircraft,
@@ -598,13 +610,13 @@ $('near').textContent=visible.filter(p=>p.assessment.status==='접근').length;
 $('unconfigured').textContent=visible.filter(p=>p.assessment.status==='미설정').length;
 $('selectedSummary').textContent=`${ACTIVE_AIRCRAFT} LEG 1~${STEP_INDEX} 누적 · CREW ${CREW_SELECTED.size}명 · 신규 ${kept.length} LEG · 실제 중복 제외 ${skipped.length} LEG · ${utcDate(asof)} UTC`; 
 $('rows').innerHTML=visible.length ? visible.map(p=>{let a=p.assessment,cls=a.status==='초과'?'bad':a.status==='접근'?'warn':a.status==='정상'?'ok':'unknown',c=d=>d===null?'—':hh(d);
-return `<tr data-name="${esc(p.name)}" tabindex="0" title="클릭하면 산출 근거 Excel 다운로드"><td>${esc(p.name)}</td><td>${p.kind==='pilot'?'Pilot':'Cabin/Other'}</td>${[7,28,365].map(n=>'<td>'+c(p.tot.duty[n])+'</td>').join('')}${[7,28,365].map(n=>'<td>'+c(p.tot.flight[n])+'</td>').join('')}<td>${a.seen?a.maxPct.toFixed(1)+'% <small>'+esc(a.top)+'</small>':'—'}${a.seen?`<div class="pct"><div class="fill ${cls}" style="width:${Math.min(a.maxPct,100)}%"></div></div>`:''}</td><td><span class="pill ${cls}">${a.status==='미설정'?'LIMIT 미설정':a.status}</span></td></tr>`}).join('') : '<tr><td colspan="10">해당 기준일의 최근 365일에 유효한 CREW 기록이 없습니다. 데이터 로딩 상태와 RAW 날짜를 확인해 주세요.</td></tr>';
+return `<tr data-name="${esc(p.name)}"><td>${esc(p.name)}</td><td>${p.kind==='pilot'?'Pilot':'Cabin/Other'}</td>${[7,28,365].map(n=>'<td>'+c(p.tot.duty[n])+'</td>').join('')}${[7,28,365].map(n=>'<td>'+c(p.tot.flight[n])+'</td>').join('')}<td>${a.seen?a.maxPct.toFixed(1)+'% <small>'+esc(a.top)+'</small>':'—'}${a.seen?`<div class="pct"><div class="fill ${cls}" style="width:${Math.min(a.maxPct,100)}%"></div></div>`:''}</td><td><span class="pill ${cls}">${a.status==='미설정'?'LIMIT 미설정':a.status}</span></td><td><button type="button" class="crew-export-btn" data-export-crew="${esc(p.name)}" title="${esc(p.name)} 산출근거 엑셀 다운로드">엑셀추출</button></td></tr>`}).join('') : '<tr><td colspan="11">해당 기준일의 최근 365일에 유효한 CREW 기록이 없습니다. 데이터 로딩 상태와 RAW 날짜를 확인해 주세요.</td></tr>';
 
 }
 function showTrips(){
  const legs=currentLegs();
  if(STEP_INDEX>legs.length)STEP_INDEX=legs.length;
- $('trips').innerHTML=legs.map((l,i)=>`<label class="trip"><input type="radio" name="tripStep" value="${i+1}" ${STEP_INDEX===i+1?'checked':''}><span><strong>${i+1}. ${esc(l.from)} → ${esc(l.to)}</strong><br><small>${new Date(l.dep).toISOString().slice(0,16).replace('T',' ')} UTC 출발 · ${new Date(l.arr).toISOString().slice(0,16).replace('T',' ')} UTC 도착 · BLOCK ${hh(l.block)}</small></span></label>`).join('')||'<p class="hint">이 기종의 해석 가능한 미래 LEG가 없습니다. WINDY 표기와 시간대를 확인하세요.</p>';
+ $('trips').innerHTML=legs.map((l,i)=>`<label class="trip"><input type="radio" name="tripStep" value="${i+1}" ${STEP_INDEX===i+1?'checked':''}><span><strong>${i+1}. ${esc(icaoOnly(l.from))} → ${esc(icaoOnly(l.to))}</strong><br><small>${new Date(l.dep).toISOString().slice(0,16).replace('T',' ')} UTC 출발 · ${new Date(l.arr).toISOString().slice(0,16).replace('T',' ')} UTC 도착 · BLOCK ${hh(l.block)}</small></span></label>`).join('')||'<p class="hint">이 기종의 해석 가능한 미래 LEG가 없습니다. WINDY 표기와 시간대를 확인하세요.</p>';
  $('trips').querySelectorAll('input[name="tripStep"]').forEach(el=>el.onchange=()=>{STEP_INDEX=Number(el.value);showTrips();refresh();});
 }
 // 24-hour common-auth.js cache remains unchanged.
@@ -785,20 +797,20 @@ function exportCrewExcel(name){
   const p=CURRENT_RESULTS.find(p=>p.name===name);if(!p||!DATA)return;
   const end=SIMULATED_ASOF+86400000-1, windows=DATA.meta.windows;
   const windowLabel=(endTime,days)=>endTime>end-days*86400000&&endTime<=end?'Y':'';
-  const summary=[['CREW',p.name],['유형',p.kind==='pilot'?'Pilot':'Cabin/Other'],['조회 기준 UTC',utcDate(SIMULATED_ASOF)],['데이터 생성 UTC',DATA.meta.generatedAt],['DUTY 분리 G/T',String(DATA.meta.minGroundBreakHours)+'시간 이상'],['DUTY 추가시간',hh(DATA.meta.extraDutyMinutes)],['계산 방식','LEG 도착시각 기준 Flight / 연속 DUTY 마지막 LEG 도착시각 기준 Duty'],[],['항목','7일','28일','365일'],['Duty',...windows.map(d=>hh(p.tot.duty[d]||0))],['Flight',...windows.map(d=>p.tot.flight[d]===null?'N/A':hh(p.tot.flight[d]))]];
+  const summary=[['CREW',p.name],['유형',p.kind==='pilot'?'Pilot':'Cabin/Other'],['조회 기준 UTC',utcDate(SIMULATED_ASOF)],[],['항목','7일','28일','365일'],['Duty',...windows.map(d=>hh(p.tot.duty[d]||0))],['Flight',...windows.map(d=>p.tot.flight[d]===null?'N/A':hh(p.tot.flight[d]))]];
   // Display the timeline in working order: Briefing -> BLOCK -> G/T.
   // G/T belongs to the PRECEDING leg. Do not include the break between DUTYs.
   const dutyRows=[['DUTY #','시작 UTC','종료 UTC','LEG 수','브리핑','BLOCK 합계','G/T 합계','DUTY 합계','7일 포함','28일 포함','365일 포함','LEG 경로']];
   const legRows=[['DUTY #','LEG #','구분','일자 UTC','출발지','도착지','출발 UTC','도착 UTC','브리핑','BLOCK','G/T (해당 LEG 이후)','DUTY 7일','DUTY 28일','DUTY 365일','Pilot Flight 산입','Flight 7일','Flight 28일','Flight 365일','항공기','TRIP','LEG NO','원본 행']];
   p.detail.duty.forEach((d,idx)=>{
     const no=idx+1;
-    dutyRows.push([no,exportDate(d.start),exportDate(d.end),d.legs.length,hh(DATA.meta.extraDutyMinutes),hh(d.block),hh(d.ground),hh(d.duty),...windows.map(n=>windowLabel(d.end,n)),d.legs.map(l=>l.from+'-'+l.to).join(' / ')]);
+    dutyRows.push([no,exportDate(d.start),exportDate(d.end),d.legs.length,hh(DATA.meta.extraDutyMinutes),hh(d.block),hh(d.ground),hh(d.duty),...windows.map(n=>windowLabel(d.end,n)),d.legs.map(l=>icaoOnly(l.from)+'-'+icaoOnly(l.to)).join(' / ')]);
     const sorted=d.legs.slice().sort(cmp);
     sorted.forEach((l,i)=>{
       const next=i+1<sorted.length?sorted[i+1]:null;
       const groundAfter=next?Math.max(0,Math.round((next.dep-l.arr)/60000)):null;
       const eligible=p.kind==='pilot'&&l.people.some(q=>q.name.toLowerCase()===p.name.toLowerCase()&&q.kind==='pilot'&&q.flightEligible);
-      legRows.push([no,i+1,l.source==='actual'?'실제':'예정',utcDate(l.dep),l.from,l.to,exportDate(l.dep),exportDate(l.arr),i===0?hh(DATA.meta.extraDutyMinutes):'—',hh(l.block),next?hh(groundAfter):'—',...windows.map(n=>windowLabel(d.end,n)),eligible?'Y':'N',...windows.map(n=>eligible?windowLabel(l.arr,n):''),l.aircraft||'',l.trip||'',l.legNo||'',l.row||'']);
+      legRows.push([no,i+1,l.source==='actual'?'실제':'예정',utcDate(l.dep),icaoOnly(l.from),icaoOnly(l.to),exportDate(l.dep),exportDate(l.arr),i===0?hh(DATA.meta.extraDutyMinutes):'—',hh(l.block),next?hh(groundAfter):'—',...windows.map(n=>windowLabel(d.end,n)),eligible?'Y':'N',...windows.map(n=>eligible?windowLabel(l.arr,n):''),l.aircraft||'',l.trip||'',l.legNo||'',l.row||'']);
     });
   });
   const blob=createXlsx([['요약',summary],['DUTY 근거',dutyRows],['LEG 상세',legRows]]);
@@ -806,12 +818,12 @@ function exportCrewExcel(name){
   link.href=url;link.download='CREW_DUTY_'+p.name.replace(/[^a-zA-Z0-9가-힣_-]+/g,'_')+'_'+utcDate(SIMULATED_ASOF)+'.xlsx';
   document.body.appendChild(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),30000);
 }
+// Only the dedicated export button downloads the Excel file.
 $('rows').addEventListener('click',e=>{
-  const row=e.target.closest('tr[data-name]');if(row)exportCrewExcel(row.dataset.name);
-});
-$('rows').addEventListener('keydown',e=>{
-  if(e.key!=='Enter'&&e.key!==' ')return;
-  const row=e.target.closest('tr[data-name]');if(row){e.preventDefault();exportCrewExcel(row.dataset.name);}
+  const button=e.target.closest('button[data-export-crew]');
+  if(!button)return;
+  e.stopPropagation();
+  exportCrewExcel(button.dataset.exportCrew);
 });
 
 document.querySelectorAll('#crewTable thead th[data-sort]').forEach(th=>{
