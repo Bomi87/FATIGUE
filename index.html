@@ -156,6 +156,8 @@ th {
 .sort-head[aria-sort="descending"], .sort-head[aria-sort="ascending"] {
     color:#ffffff;
 }
+tr[data-name] { cursor:pointer; }
+tr[data-name]:focus-visible { outline:2px solid #77aaff; outline-offset:-2px; }
 tr:hover {
     background:#1a304b;
 }
@@ -448,6 +450,7 @@ footer {
 'use strict';
 let DATA=null,CREW_SELECTED=new Set(),ACTIVE_AIRCRAFT="ACJ",STEP_INDEX=0;
 let SIMULATED_ASOF=null;
+let CURRENT_RESULTS=[];
 // Default: highest 365-day DUTY first. Header clicks choose the metric (largest first).
 let CREW_SORT_KEY='duty365', CREW_SORT_DIRECTION='desc';
 const SORT_KEYS=['name','kind','duty7','duty28','duty365','flight7','flight28','flight365','usage','status'];
@@ -585,6 +588,7 @@ results.forEach(p=>{
    if(a.maxPct>original.maxPct){p.assessment=a;}
  }
 });
+CURRENT_RESULTS=results;
 results.sort(compareCrew);
 updateSortHeaders();
 const visible=results.filter(p=>($('kind').value==='all'||p.kind===$('kind').value));
@@ -594,7 +598,7 @@ $('near').textContent=visible.filter(p=>p.assessment.status==='접근').length;
 $('unconfigured').textContent=visible.filter(p=>p.assessment.status==='미설정').length;
 $('selectedSummary').textContent=`${ACTIVE_AIRCRAFT} LEG 1~${STEP_INDEX} 누적 · CREW ${CREW_SELECTED.size}명 · 신규 ${kept.length} LEG · 실제 중복 제외 ${skipped.length} LEG · ${utcDate(asof)} UTC`; 
 $('rows').innerHTML=visible.length ? visible.map(p=>{let a=p.assessment,cls=a.status==='초과'?'bad':a.status==='접근'?'warn':a.status==='정상'?'ok':'unknown',c=d=>d===null?'—':hh(d);
-return `<tr data-name="${esc(p.name)}"><td>${esc(p.name)}</td><td>${p.kind==='pilot'?'Pilot':'Cabin/Other'}</td>${[7,28,365].map(n=>'<td>'+c(p.tot.duty[n])+'</td>').join('')}${[7,28,365].map(n=>'<td>'+c(p.tot.flight[n])+'</td>').join('')}<td>${a.seen?a.maxPct.toFixed(1)+'% <small>'+esc(a.top)+'</small>':'—'}${a.seen?`<div class="pct"><div class="fill ${cls}" style="width:${Math.min(a.maxPct,100)}%"></div></div>`:''}</td><td><span class="pill ${cls}">${a.status==='미설정'?'LIMIT 미설정':a.status}</span></td></tr>`}).join('') : '<tr><td colspan="10">해당 기준일의 최근 365일에 유효한 CREW 기록이 없습니다. 데이터 로딩 상태와 RAW 날짜를 확인해 주세요.</td></tr>';
+return `<tr data-name="${esc(p.name)}" tabindex="0" title="클릭하면 산출 근거 Excel 다운로드"><td>${esc(p.name)}</td><td>${p.kind==='pilot'?'Pilot':'Cabin/Other'}</td>${[7,28,365].map(n=>'<td>'+c(p.tot.duty[n])+'</td>').join('')}${[7,28,365].map(n=>'<td>'+c(p.tot.flight[n])+'</td>').join('')}<td>${a.seen?a.maxPct.toFixed(1)+'% <small>'+esc(a.top)+'</small>':'—'}${a.seen?`<div class="pct"><div class="fill ${cls}" style="width:${Math.min(a.maxPct,100)}%"></div></div>`:''}</td><td><span class="pill ${cls}">${a.status==='미설정'?'LIMIT 미설정':a.status}</span></td></tr>`}).join('') : '<tr><td colspan="10">해당 기준일의 최근 365일에 유효한 CREW 기록이 없습니다. 데이터 로딩 상태와 RAW 날짜를 확인해 주세요.</td></tr>';
 
 }
 function showTrips(){
@@ -608,6 +612,22 @@ function showTrips(){
 // ID tokens expire (typically around 1 hour); renewal may prompt the user.
 const BACKEND_URL = 'https://script.google.com/macros/s/AKfycbw_hSBOeESSs9C8S_Mf2ORDBrRNCrb4AA30S4pkY_7C6I_b6QKaeaUYA0-dklS3UDXJSA/exec';
 const GOOGLE_CLIENT_ID = '434108168386-jn8hp4mflhn68n98n6m9r1nm6iv7b3qe.apps.googleusercontent.com';
+const CREW_SESSION_KEY='crew-duty-dashboard-session-v1';
+let crewSession=null;
+function readCrewSession(){
+  try {const s=JSON.parse(localStorage.getItem(CREW_SESSION_KEY)||'null');
+    if(s?.sessionToken&&s.expires>Date.now()+5000)return s;
+    localStorage.removeItem(CREW_SESSION_KEY);
+  }catch(e){}return null;
+}
+function storeCrewSession(s){
+  crewSession={sessionToken:s.sessionToken,expires:s.expires};
+  try{localStorage.setItem(CREW_SESSION_KEY,JSON.stringify(crewSession));}catch(e){}
+}
+function clearCrewSession(){
+  crewSession=null;
+  try{localStorage.removeItem(CREW_SESSION_KEY);}catch(e){}
+}
 let idToken = '';
 let tokenExpiryMs = 0;
 let loading = false;
@@ -625,16 +645,19 @@ function authError(message) {
   setConnectionStatus('연결 확인 필요');
 }
 
-function receiveCredential(response) {
-  idToken = String(response?.credential || '');
-  if (!idToken) return authError('Google 인증정보를 받지 못했습니다.');
+async function receiveCredential(response) {
+  idToken=String(response?.credential||'');
+  if(!idToken)return authError('Google 인증정보를 받지 못했습니다.');
+  requestingToken=false;
   try {
-    const p = JSON.parse(atob(idToken.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));
-    tokenExpiryMs = Number(p.exp)*1000;
-  } catch (e) { tokenExpiryMs = 0; }
-  requestingToken = false;
-  $('loginButton').style.display='none';
-  load();
+    setConnectionStatus('24시간 인증 세션 생성 중…');
+    const session=await gasBridgePost({action:'session',idToken});
+    if(!session?.ok||!session.sessionToken)throw Error(session?.error||'세션 발급 실패');
+    storeCrewSession(session);
+    idToken='';
+    $('loginButton').style.display='none';
+    load();
+  }catch(err){authError('인증 오류: '+err.message);$('loginButton').style.display='block';}
 }
 
 function requestCredential() {
@@ -702,18 +725,17 @@ function gasBridgePost(payload) {
 
 async function load(){
   if(!window.CURRENT_PORTAL_USER)return;
-  if(!idToken || Date.now()>tokenExpiryMs-60000){
-    idToken='';
-    requestCredential();
-    return;
-  }
+  if(!crewSession || crewSession.expires<=Date.now()){clearCrewSession();requestCredential();return;}
   if(loading)return;
   loading=true;
   $('message').hidden=true;
   $('updated').textContent='Loading…';
   try{
-    const data=await gasBridgePost({action:'data',idToken});
-    if(!data || !data.ok)throw Error(data?.error || '백엔드 오류');
+    const data=await gasBridgePost({action:'data',sessionToken:crewSession.sessionToken});
+    if(!data || !data.ok){
+      if(/session|access revoked|account access/i.test(String(data?.error||''))){clearCrewSession();requestCredential();return;}
+      throw Error(data?.error || '백엔드 오류');
+    }
     if(!Array.isArray(data.actual))throw Error('GAS 응답에 actual 배열이 없습니다. 배포된 백엔드 버전을 확인하세요.');
     DATA=data;
     $('updated').textContent='Loaded '+data.meta.generatedAt+' UTC · Actual '+data.actual.length+' LEG / Planned '+data.planned.length+' LEG';
@@ -724,6 +746,72 @@ async function load(){
   }catch(error){authError('데이터 로딩 오류: '+error.message);$('updated').textContent='Failed';}
   finally{loading=false;}
 }
+// Download a real XLSX generated locally, without uploading flight/crew data to a third party.
+const exportDate = ms => new Date(ms).toISOString().replace('T',' ').slice(0,16);
+function xmlEscape(s){return String(s??'').replace(/[<>&"']/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&apos;'}[c]));}
+function spreadsheetXml(rows){
+  return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'+
+    '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>'+rows.map((row,i)=>
+       '<row r="'+(i+1)+'">'+row.map((value,j)=>{
+        const ref=excelCol(j+1)+(i+1);
+        // All cells as literal strings to protect against Excel formula injection.
+        return '<c r="'+ref+'" t="inlineStr"><is><t xml:space="preserve">'+xmlEscape(value)+'</t></is></c>';
+       }).join('')+'</row>').join('')+'</sheetData></worksheet>';
+}
+function excelCol(n){let s='';while(n){n--;s=String.fromCharCode(65+n%26)+s;n=Math.floor(n/26);}return s;}
+function crc32(bytes){let crc=-1;for(const b of bytes){crc^=b;for(let i=0;i<8;i++)crc=(crc>>>1) ^ (crc&1?0xEDB88320:0);}return (crc^(-1))>>>0;}
+function zipStore(entries){
+  const encoder=new TextEncoder(),parts=[],central=[];let offset=0;
+  const u16=n=>[n&255,(n>>>8)&255],u32=n=>[n&255,(n>>>8)&255,(n>>>16)&255,(n>>>24)&255];
+  for(const [name,content] of entries){
+    const nb=encoder.encode(name),bytes=encoder.encode(content),crc=crc32(bytes);
+    const local=new Uint8Array([...u32(0x04034b50),...u16(20),...u16(0),...u16(0),...u16(0),...u16(0),...u32(crc),...u32(bytes.length),...u32(bytes.length),...u16(nb.length),...u16(0),...nb]);
+    parts.push(local,bytes);
+    central.push(new Uint8Array([...u32(0x02014b50),...u16(20),...u16(20),...u16(0),...u16(0),...u16(0),...u16(0),...u32(crc),...u32(bytes.length),...u32(bytes.length),...u16(nb.length),...u16(0),...u16(0),...u16(0),...u16(0),...u32(0),...u32(offset),...nb]));
+    offset+=local.length+bytes.length;
+  }
+  const centralSize=central.reduce((s,c)=>s+c.length,0);
+  const ending=new Uint8Array([...u32(0x06054b50),...u16(0),...u16(0),...u16(entries.length),...u16(entries.length),...u32(centralSize),...u32(offset),...u16(0)]);
+  return new Blob([...parts,...central,ending],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+}
+function createXlsx(sheets){
+  const types='<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'+sheets.map((_,i)=>'<Override PartName="/xl/worksheets/sheet'+(i+1)+'.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>').join('')+'</Types>';
+  const rootRels='<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>';
+  const workbook='<?xml version="1.0" encoding="UTF-8"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>'+sheets.map(([name],i)=>'<sheet name="'+xmlEscape(name)+'" sheetId="'+(i+1)+'" r:id="rId'+(i+1)+'"/>').join('')+'</sheets></workbook>';
+  const wbRels='<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'+sheets.map((_,i)=>'<Relationship Id="rId'+(i+1)+'" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet'+(i+1)+'.xml"/>').join('')+'</Relationships>';
+  return zipStore([['[Content_Types].xml',types],['_rels/.rels',rootRels],['xl/workbook.xml',workbook],['xl/_rels/workbook.xml.rels',wbRels],...sheets.map((s,i)=>['xl/worksheets/sheet'+(i+1)+'.xml',spreadsheetXml(s[1])])]);
+}
+function exportCrewExcel(name){
+  const p=CURRENT_RESULTS.find(p=>p.name===name);if(!p||!DATA)return;
+  const end=SIMULATED_ASOF+86400000-1, windows=DATA.meta.windows;
+  const windowLabel=(endTime,days)=>endTime>end-days*86400000&&endTime<=end?'Y':'';
+  const summary=[['CREW',p.name],['유형',p.kind==='pilot'?'Pilot':'Cabin/Other'],['조회 기준 UTC',utcDate(SIMULATED_ASOF)],['데이터 생성 UTC',DATA.meta.generatedAt],['DUTY 분리 G/T',String(DATA.meta.minGroundBreakHours)+'시간 이상'],['DUTY 추가시간',hh(DATA.meta.extraDutyMinutes)],['계산 방식','LEG 도착시각 기준 Flight / 연속 DUTY 마지막 LEG 도착시각 기준 Duty'],[],['항목','7일','28일','365일'],['Duty',...windows.map(d=>hh(p.tot.duty[d]||0))],['Flight',...windows.map(d=>p.tot.flight[d]===null?'N/A':hh(p.tot.flight[d]))]];
+  const dutyRows=[['DUTY #','시작 UTC','종료 UTC','LEG 수','BLOCK 합계','G/T 합계','추가시간','DUTY 합계','7일 포함','28일 포함','365일 포함','LEG 경로']];
+  const legRows=[['DUTY #','LEG #','구분','일자 UTC','출발지','도착지','출발 UTC','도착 UTC','BLOCK','직전 LEG 도착 후 G/T','Duty 계산 포함 G/T','Pilot Flight 산입','Flight 7일','Flight 28일','Flight 365일','DUTY 7일','DUTY 28일','DUTY 365일','항공기','TRIP','LEG NO','원본 행']];
+  p.detail.duty.forEach((d,idx)=>{
+    const no=idx+1;
+    dutyRows.push([no,exportDate(d.start),exportDate(d.end),d.legs.length,hh(d.block),hh(d.ground),hh(DATA.meta.extraDutyMinutes),hh(d.duty),...windows.map(n=>windowLabel(d.end,n)),d.legs.map(l=>l.from+'-'+l.to).join(' / ')]);
+    const sorted=d.legs.slice().sort(cmp);
+    sorted.forEach((l,i)=>{
+      const previous=i?sorted[i-1]:null;
+      const gap=previous?Math.max(0,Math.round((l.dep-previous.arr)/60000)):0;
+      const eligible=p.kind==='pilot'&&l.people.some(q=>q.name.toLowerCase()===p.name.toLowerCase()&&q.kind==='pilot'&&q.flightEligible);
+      legRows.push([no,i+1,l.source==='actual'?'실제':'예정',utcDate(l.dep),l.from,l.to,exportDate(l.dep),exportDate(l.arr),hh(l.block),previous?hh(gap):'—',previous?hh(gap):'00:00',eligible?'Y':'N',...windows.map(n=>eligible?windowLabel(l.arr,n):''),...windows.map(n=>windowLabel(d.end,n)),l.aircraft||'',l.trip||'',l.legNo||'',l.row||'']);
+    });
+  });
+  const blob=createXlsx([['요약',summary],['DUTY 근거',dutyRows],['LEG 상세',legRows]]);
+  const url=URL.createObjectURL(blob),link=document.createElement('a');
+  link.href=url;link.download='CREW_DUTY_'+p.name.replace(/[^a-zA-Z0-9가-힣_-]+/g,'_')+'_'+utcDate(SIMULATED_ASOF)+'.xlsx';
+  document.body.appendChild(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),30000);
+}
+$('rows').addEventListener('click',e=>{
+  const row=e.target.closest('tr[data-name]');if(row)exportCrewExcel(row.dataset.name);
+});
+$('rows').addEventListener('keydown',e=>{
+  if(e.key!=='Enter'&&e.key!==' ')return;
+  const row=e.target.closest('tr[data-name]');if(row){e.preventDefault();exportCrewExcel(row.dataset.name);}
+});
+
 document.querySelectorAll('#crewTable thead th[data-sort]').forEach(th=>{
  th.insertAdjacentHTML('beforeend','<span class="sort-arrow" aria-hidden="true"></span>');
  th.addEventListener('click',()=>setCrewSort(th.dataset.sort));
@@ -750,7 +838,9 @@ window.startProtectedApp = function () {
   if (crewAppStarted) return;
   crewAppStarted = true;
   setConnectionStatus('승인된 사용자 · 데이터 인증 시작…');
-  requestCredential();
+  crewSession=readCrewSession();
+  if(crewSession){$('loginButton').style.display='none';load();}
+  else requestCredential();
 };
 (function waitForPortalAuth(){
   if(window.CURRENT_PORTAL_USER){window.startProtectedApp();return;}
