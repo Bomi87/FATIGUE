@@ -677,85 +677,60 @@ function showTrips(){
   refresh();
  });
 }
-// 24-hour common-auth.js cache remains unchanged.
-// Additional Google ID credential is required for every private GAS API request.
-// ID tokens expire (typically around 1 hour); renewal may prompt the user.
+// Portal shared 24h login is the only interactive login flow.
+// CREW back-end validates the portal-signed token before issuing its own session.
 const BACKEND_URL = 'https://script.google.com/macros/s/AKfycbw_hSBOeESSs9C8S_Mf2ORDBrRNCrb4AA30S4pkY_7C6I_b6QKaeaUYA0-dklS3UDXJSA/exec';
-const GOOGLE_CLIENT_ID = '434108168386-jn8hp4mflhn68n98n6m9r1nm6iv7b3qe.apps.googleusercontent.com';
-const CREW_SESSION_KEY='crew-duty-dashboard-session-v1';
+const CREW_SESSION_KEY='crew-duty-dashboard-session-v2';
+const PORTAL_SESSION_STORAGE_KEY='bomiPortalSessionTokenV2';
 let crewSession=null;
+let loading=false;
+let creatingCrewSession=false;
 function readCrewSession(){
   try {const s=JSON.parse(localStorage.getItem(CREW_SESSION_KEY)||'null');
-    if(s?.sessionToken&&s.expires>Date.now()+5000)return s;
+    const email=String(window.CURRENT_PORTAL_USER?.email||'').toLowerCase();
+    if(s?.sessionToken&&s.expires>Date.now()+5000&&s.email===email)return s;
     localStorage.removeItem(CREW_SESSION_KEY);
   }catch(e){}return null;
 }
 function storeCrewSession(s){
-  crewSession={sessionToken:s.sessionToken,expires:s.expires};
+  crewSession={sessionToken:s.sessionToken,expires:s.expires,email:String(s.email||'').toLowerCase()};
   try{localStorage.setItem(CREW_SESSION_KEY,JSON.stringify(crewSession));}catch(e){}
 }
 function clearCrewSession(){
   crewSession=null;
   try{localStorage.removeItem(CREW_SESSION_KEY);}catch(e){}
 }
-let idToken = '';
-let tokenExpiryMs = 0;
-let loading = false;
-let requestingToken = false;
-let oauthReady = false;
-
-function setConnectionStatus(message) {
-  const node = $('updated');
-  if (node) node.textContent = message;
+function setConnectionStatus(message){const node=$('updated');if(node)node.textContent=message;}
+function authError(message){const msg=$('message');msg.hidden=false;msg.textContent=message;setConnectionStatus('연결 확인 필요');}
+function getSavedPortalToken(){
+  try{
+    const token=String(localStorage.getItem(PORTAL_SESSION_STORAGE_KEY)||'').trim();
+    if(!token)return '';
+    const part=token.split('.')[0];
+    const normalized=part.replace(/-/g,'+').replace(/_/g,'/');
+    const payload=JSON.parse(atob(normalized+'='.repeat((4-normalized.length%4)%4)));
+    const email=String(window.CURRENT_PORTAL_USER?.email||'').toLowerCase();
+    return payload.exp*1000>Date.now()+5000 && String(payload.email||'').toLowerCase()===email ? token : '';
+  }catch(e){return '';}
 }
-function authError(message) {
-  const msg = $('message');
-  msg.hidden = false;
-  msg.textContent = message;
-  setConnectionStatus('연결 확인 필요');
-}
-
-async function receiveCredential(response) {
-  idToken=String(response?.credential||'');
-  if(!idToken)return authError('Google 인증정보를 받지 못했습니다.');
-  requestingToken=false;
-  try {
-    setConnectionStatus('24시간 인증 세션 생성 중…');
-    const session=await gasBridgePost({action:'session',idToken});
-    if(!session?.ok||!session.sessionToken)throw Error(session?.error||'세션 발급 실패');
-    storeCrewSession(session);
-    idToken='';
-    $('loginButton').style.display='none';
-    load();
-  }catch(err){authError('인증 오류: '+err.message);$('loginButton').style.display='block';}
-}
-
-function requestCredential() {
-  if (!window.CURRENT_PORTAL_USER) return;
-  setConnectionStatus('포털 인증 완료 · GAS 데이터 인증 확인 중…');
-  if (!window.google?.accounts?.id) {
-    authError('Google 로그인 모듈을 불러오는 중입니다. 잠시 후 새로고침하세요.');
+async function requestCredential(){
+  if(!window.CURRENT_PORTAL_USER||creatingCrewSession)return;
+  const token=getSavedPortalToken();
+  if(!token){
+    authError('포털의 서명 세션이 없거나 만료되었습니다. 포털에서 Google 로그인 후 다시 접속해 주세요. (최초 갱신 시 1회 필요)');
     return;
   }
-  if (!oauthReady) {
-    google.accounts.id.initialize({
-      client_id: GOOGLE_CLIENT_ID,
-      callback: receiveCredential,
-      auto_select: true,
-      cancel_on_tap_outside: false
-    });
-    google.accounts.id.renderButton($('loginButton'),{
-      theme:'outline',size:'large',shape:'pill',text:'continue_with',width:220
-    });
-    oauthReady = true;
-  }
-  $('loginButton').style.display = 'block';
-  const msg=$('message'); msg.hidden=false;
-  msg.textContent='포털 로그인이 완료됐습니다. 비공개 RAW 데이터를 가져오려면 아래 Google 계정 확인이 필요할 수 있습니다. 승인 후 전체 CREW 명단이 자동 표시됩니다.';
-  if (!requestingToken) {
-    requestingToken = true;
-    google.accounts.id.prompt();
-  }
+  creatingCrewSession=true;
+  setConnectionStatus('포털 인증 세션 확인 중…');
+  try{
+    const session=await gasBridgePost({action:'session',portalSessionToken:token});
+    if(!session?.ok||!session.sessionToken)throw Error(session?.error||'포털 인증 실패');
+    if(String(session.email||'').toLowerCase()!==String(window.CURRENT_PORTAL_USER.email||'').toLowerCase())throw Error('포털 사용자 계정이 일치하지 않습니다.');
+    storeCrewSession(session);
+    $('loginButton').style.display='none';
+    load();
+  }catch(e){authError('포털 인증 오류: '+e.message);}
+  finally{creatingCrewSession=false;}
 }
 
 // POST to GAS through an isolated hidden iframe, no Worker, JSONP or CORS fetch.
