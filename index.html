@@ -656,7 +656,7 @@ function showTrips(){
  // Clear stale ids after schedule refresh, while preserving still-present selections.
  const validIds=new Set((DATA?.planned||[]).map(l=>l.id));
  for(const id of SELECTED_PLAN_IDS)if(!validIds.has(id))SELECTED_PLAN_IDS.delete(id);
- $('trips').innerHTML=legs.map((l,i)=>`<label class="trip"><input type="checkbox" data-planned-leg="${esc(l.id)}" ${SELECTED_PLAN_IDS.has(l.id)?'checked':''}><span><strong>${i+1}. ${esc(icaoOnly(l.from))} → ${esc(icaoOnly(l.to))}</strong><br><small>${new Date(l.dep).toISOString().slice(0,16).replace('T',' ')} UTC 출발 · ${new Date(l.arr).toISOString().slice(0,16).replace('T',' ')} UTC 도착 · BLOCK ${hh(l.block)}</small></span></label>`).join('')||'<p class="hint">이 기종의 해석 가능한 미래 UTC LEG가 없습니다. WINDY B열 일정을 확인하세요.</p>';
+ $('trips').innerHTML=legs.map((l,i)=>`<label class="trip"><input type="checkbox" data-planned-leg="${esc(l.id)}" ${SELECTED_PLAN_IDS.has(l.id)?'checked':''}><span><strong>${i+1}. ${esc(icaoOnly(l.from))} → ${esc(icaoOnly(l.to))}</strong><br><small>${new Date(l.dep).toISOString().slice(0,16).replace('T',' ')} UTC 출발 · ${new Date(l.arr).toISOString().slice(0,16).replace('T',' ')} UTC 도착 · BLOCK ${hh(l.block)}</small></span></label>`).join('')||'';
  $('trips').querySelectorAll('input[data-planned-leg]').forEach(el=>el.onchange=()=>{
   if(el.checked)SELECTED_PLAN_IDS.add(el.dataset.plannedLeg);
   else SELECTED_PLAN_IDS.delete(el.dataset.plannedLeg);
