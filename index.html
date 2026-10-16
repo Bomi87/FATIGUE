@@ -875,11 +875,23 @@ function exportCrewExcel(name){
   });
   const legCountBreakdown=`HL8080: ${legCounts.HL8080}회 / HL8372: ${legCounts.HL8372}회` +
     (legCounts.other?` / 기타: ${legCounts.other}회`:'');
+  // Count night LEGs from RAW CG Night Time (positive minutes) in the same 365-day window.
+  // Planned LEGs have no recorded Night Time and are not counted.
+  const nightLegs=countedLegs.filter(l=>l.source==='actual' && Number(l.nightMinutes)>0);
+  const nightCounts={HL8080:0,HL8372:0,other:0};
+  nightLegs.forEach(l=>{
+    const reg=registration(l);
+    if(reg==='HL8080'||reg==='HL8372')nightCounts[reg]++;
+    else nightCounts.other++;
+  });
+  const nightBreakdown=`HL8080: ${nightCounts.HL8080}회 / HL8372: ${nightCounts.HL8372}회` +
+    (nightCounts.other?` / 기타: ${nightCounts.other}회`:'');
   const summary=[
     ['이름',p.name],
     ['모듈',crewPosition(p)],
     ['조회 기준 UTC',utcDate(SIMULATED_ASOF)],
     ['총 LEG 수 (365일 기준)',`총 ${countedLegs.length}회 (${legCountBreakdown})`],
+    ['야간시간 포함 LEG 횟수 (365일 기준)',`총 ${nightLegs.length}회 (${nightBreakdown})`],
     [],
     ['항목','7일','28일','365일'],
     ['Duty',...windows.map(d=>hh(p.tot.duty[d]||0))],
