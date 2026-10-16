@@ -90,7 +90,7 @@ input[type=checkbox] {
 }
 .cards {
     display:grid;
-    grid-template-columns:repeat(4,minmax(140px,1fr));
+    grid-template-columns:repeat(3,minmax(140px,1fr));
     gap:12px;
     margin-bottom:18px;
 }
@@ -412,8 +412,8 @@ footer {
    </div>
   </header>
   <main>
-   <aside class="limit-reference" aria-label="피로관리 규정(Pilot 기준)">
-    <span class="limit-heading">피로관리 규정(Pilot 기준)</span>
+   <aside class="limit-reference" aria-label="운항시간 관리 참고 기준">
+    <span class="limit-heading">운항시간 관리 참고 기준</span>
     <span>Duty 7일 <strong>60시간</strong></span>
     <span>Duty 28일 <strong>190시간</strong></span>
     <span>Flight 28일 <strong>100시간</strong> (보수적 적용)</span>
@@ -471,14 +471,7 @@ footer {
       —
      </div>
     </div>
-    <div class="card">
-     <div class="muted">
-      기준 미설정 인원
-     </div>
-     <div class="val" id="unconfigured">
-      —
-     </div>
-    </div>
+
    </section>
    <div class="layout">
     <section class="panel">
@@ -643,8 +636,15 @@ tot.duty[days]=ds.filter(d=>d.end>lower&&d.end<=end).reduce((s,d)=>s+d.duty,0);
 tot.flight[days]=person.kind==='pilot'?person.legs.filter(l=>l.arr>lower&&l.arr<=end&&l.people.some(p=>p.name.toLowerCase()===person.name.toLowerCase()&&p.kind==='pilot'&&p.flightEligible)).reduce((s,l)=>s+l.block,0):null;
 }return {tot,detail};
 }
-function assess(p,t,threshold){let cfg=DATA.meta.limits[p.kind]||{},seen=false,maxPct=0,top='';
-for(let category of ['duty','flight'])for(let days of DATA.meta.windows){let limit=cfg[category]?.[days];
+// Apply uniform DUTY color thresholds to all rostered crew. Flight 7-day is display-only.
+function getLimitHours(person,category,days){
+  if(category==='duty')return ({7:60,28:190,365:1000})[days]??null;
+  if(category==='flight' && days===7)return null;
+  if(category==='flight' && person.kind==='pilot')return ({28:100,365:1000})[days]??null;
+  return null;
+}
+function assess(p,t,threshold){let seen=false,maxPct=0,top='';
+for(let category of ['duty','flight'])for(let days of DATA.meta.windows){let limit=getLimitHours(p,category,days);
 if(limit!==null&&limit!==undefined&&Number(limit)>0&&t[category][days]!==null){seen=true;
 let pct=t[category][days]/(Number(limit)*60)*100;
 if(pct>maxPct){maxPct=pct;
@@ -722,13 +722,12 @@ window.CURRENT_VISIBLE_CREW=visible;
 $('count').textContent=visible.length;
 $('exceed').textContent=visible.filter(p=>p.assessment.status==='경계').length;
 $('near').textContent=visible.filter(p=>p.assessment.status==='주의').length;
-$('unconfigured').textContent=visible.filter(p=>p.assessment.status==='미설정').length;
 $('selectedSummary').textContent=`${ACTIVE_AIRCRAFT} 선택 ${currentLegs().filter(l=>SELECTED_PLAN_IDS.has(l.id)).length} LEG · CREW ${CREW_SELECTED.size}명 · 반영 ${kept.length} LEG · 실제 중복 제외 ${skipped.length} LEG · ${utcDate(asof)} UTC`; 
 $('rows').innerHTML=visible.length ? visible.map(p=>{
  const timeCell=(category,days)=>{
    const minutes=p.tot[category]?.[days];
    if(minutes===null||minutes===undefined)return '<td>—</td>';
-   const limit=Number(DATA.meta.limits?.[p.kind]?.[category]?.[days]);
+   const limit=getLimitHours(p,category,days);
    // Missing limits remain uncolored. Never interpret an unconfigured limit as compliant.
    const fraction=Number.isFinite(limit)&&limit>0?minutes/(limit*60):null;
    const level=fraction!==null&&fraction>=0.9?'time-alert-danger':fraction!==null&&fraction>=0.8?'time-alert-warn':'';
@@ -993,7 +992,7 @@ function exportCrewListPdf(){
    const cells=[];
    for(const type of ['duty','flight'])for(const days of [7,28,365]){
      const min=p.tot?.[type]?.[days];
-     const limit=Number(DATA.meta.limits?.[p.kind]?.[type]?.[days]);
+     const limit=getLimitHours(p,type,days);
      const frac=min==null||!(limit>0)?0:min/(limit*60);
      const cls=frac>=.9?'pdf-danger':frac>=.8?'pdf-warn':'';
      cells.push(`<td class="${cls}">${min==null?'—':hh(min)}</td>`);
