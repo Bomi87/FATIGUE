@@ -578,21 +578,19 @@ function selectPlans(){
  return {kept,skipped};
 }
 let ALL_CREW=[];
-function recentActualCrewKeys(){
- // Same recent-3-calendar-month eligibility as the main CREW table.
- const today=new Date();
- const targetMonthEnd=new Date(Date.UTC(today.getUTCFullYear(),today.getUTCMonth()-2,0)).getUTCDate();
- const cutoff=Date.UTC(today.getUTCFullYear(),today.getUTCMonth()-3,Math.min(today.getUTCDate(),targetMonthEnd));
- const active=new Set();
+function recentActualCrewKeys(asofMs){
+ // Historical as-of: list crew with at least one completed LEG within the past 365 UTC days.
+ const basis=Number.isFinite(asofMs)?asofMs:Date.parse($('asof').value+'T00:00:00Z');
+ if(!Number.isFinite(basis))return new Set();
+ const end=basis+86400000-1,lower=end-365*86400000,active=new Set();
  for(const leg of (DATA?.actual||[])){
-   if(leg.arr>=cutoff&&leg.arr<=Date.now()){
-     for(const person of leg.people)active.add(person.name.toLowerCase());
-   }
+   if(leg.arr>lower&&leg.arr<=end)for(const person of leg.people)active.add(person.name.toLowerCase());
  }
  return active;
 }
+
 function showCrewChoices(){
- const active=recentActualCrewKeys();
+ const active=recentActualCrewKeys(Date.parse($('asof').value+'T00:00:00Z'));
  // Inactive people must not remain assigned invisibly after a reload.
  for(const key of CREW_SELECTED)if(!active.has(key))CREW_SELECTED.delete(key);
  const names=ALL_CREW.filter(p=>hasRosterPosition(p)&&active.has(p.name.toLowerCase())&&p.name.toLowerCase().includes(($('crewSearch').value||'').trim().toLowerCase()));
@@ -607,10 +605,15 @@ const latestSelected=selectedLegs.length?Math.max(...selectedLegs.map(l=>l.arr))
 const asof=Math.max(inputAsOf,latestSelected?Date.parse(utcDate(latestSelected)+'T00:00:00Z'):inputAsOf);
 SIMULATED_ASOF=asof;
 const threshold=80; // Fixed: 80% caution, 90% danger
-const {kept,skipped}=selectPlans(),all=buildPersonLegs(DATA.actual,kept);
-// Visibility: only crew with a completed ACTUAL LEG in the last 3 calendar months (relative to today).
+const {kept,skipped}=selectPlans();
+// Lightweight per-date view: restrict calculations to ~366 days instead of traversing all history.
+// Include one extra day so a DUTY crossing the 365-day lower boundary remains available.
+const historyCutoff=asof+86400000-1-366*86400000;
+const actualForWindow=DATA.actual.filter(l=>l.arr>historyCutoff&&l.dep<=asof+86400000-1);
+const all=buildPersonLegs(actualForWindow,kept);
+// Visibility: listed crew with actual activity in the 365-day UTC window ending on the selected as-of date.
 // Future simulation legs cannot make an otherwise inactive person visible.
-const recentActual=recentActualCrewKeys();
+const recentActual=recentActualCrewKeys(asof);
 let results=all.filter(p=>hasRosterPosition(p)&&recentActual.has(p.name.toLowerCase())).map(p=>({...p,...compute(p,asof),assessment:null}));
 // Check rolling-limit peaks at EVERY included scheduled LEG end, not just the final one.
 results.forEach(p=>{
@@ -795,7 +798,7 @@ async function load(){
     const errors=[...(data.errors?.actual||[]).map(x=>'실제: '+x),...(data.errors?.planned||[]).map(x=>'예정: '+x)];
     if(errors.length){$('message').hidden=false;$('message').textContent='일부 기록 제외: '+errors.slice(0,12).join(' / ');}
     ALL_CREW=buildPersonLegs(DATA.actual,[]).sort((a,b)=>a.name.localeCompare(b.name));SELECTED_PLAN_IDS.clear();CREW_SELECTED.clear();showCrewChoices();showTrips();refresh();
-    if(!data.actual.length){authError('최근 365일에 변환된 실제 LEG가 0건입니다. GAS RAW 날짜 파싱과 조회 기간을 확인하세요.');}
+    if(!data.actual.length){authError('조회 가능한 실제 LEG가 0건입니다. GAS RAW 날짜 파싱을 확인하세요.');}
   }catch(error){authError('데이터 로딩 오류: '+error.message);$('updated').textContent='Failed';}
   finally{loading=false;}
 }
@@ -803,8 +806,19 @@ async function load(){
 const exportDate = ms => new Date(ms).toISOString().replace('T',' ').slice(0,16);
 function xmlEscape(s){return String(s??'').replace(/[<>&"']/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&apos;'}[c]));}
 function spreadsheetXml(rows){
+  // Calculate widths from content before generating the Excel sheet.  Cap very long fields.
+  const count=Math.max(0,...rows.map(row=>row.length));
+  const widths=Array.from({length:count},(_,col)=>{
+    const widest=rows.reduce((best,row)=>{
+      const content=String(row[col]??'');
+      const units=[...content].reduce((sum,ch)=>sum+(/[\u1100-\u11ff\u3130-\u318f\uac00-\ud7af]/.test(ch)?1.8:1),0);
+      return Math.max(best,units);
+    },0);
+    return Math.min(54,Math.max(10,Math.ceil(widest+3)));
+  });
+  const cols='<cols>'+widths.map((w,i)=>'<col min="'+(i+1)+'" max="'+(i+1)+'" width="'+w+'" customWidth="1"/>').join('')+'</cols>';
   return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'+
-    '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/><selection pane="bottomLeft" activeCell="A2" sqref="A2"/></sheetView></sheetViews><sheetData>'+rows.map((row,i)=>
+    '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/><selection pane="bottomLeft" activeCell="A2" sqref="A2"/></sheetView></sheetViews>'+cols+'<sheetData>'+rows.map((row,i)=>
        '<row r="'+(i+1)+'">'+row.map((value,j)=>{
         const ref=excelCol(j+1)+(i+1);
         // All cells as literal strings to protect against Excel formula injection.
@@ -838,20 +852,33 @@ function exportCrewExcel(name){
   const p=CURRENT_RESULTS.find(p=>p.name===name);if(!p||!DATA)return;
   const end=SIMULATED_ASOF+86400000-1, windows=DATA.meta.windows;
   const windowLabel=(endTime,days)=>endTime>end-days*86400000&&endTime<=end?'Y':'';
-  const summary=[['CREW',p.name],['직책',crewPosition(p)],['조회 기준 UTC',utcDate(SIMULATED_ASOF)],[],['항목','7일','28일','365일'],['Duty',...windows.map(d=>hh(p.tot.duty[d]||0))],['Flight',...windows.map(d=>p.tot.flight[d]===null?'N/A':hh(p.tot.flight[d]))]];
+  // For a dual-type crew member, preserve each leg's actual aircraft registration.
+  const registration=leg=>{
+    const raw=String(leg.aircraft||'').trim().toUpperCase();
+    const found=raw.match(/HL(?:8080|8372)/);
+    if(found)return found[0];
+    if(raw==='ACJ'||raw==='A319'||raw==='A319CJ')return 'HL8080';
+    if(raw==='G650'||raw==='G650ER')return 'HL8372';
+    return raw||'—';
+  };
+  const reportStart=end-365*86400000;
+  const reportDuties=p.detail.duty.filter(d=>d.end>reportStart && d.end<=end);
+  const reportLegs=reportDuties.flatMap(d=>d.legs.filter(l=>l.arr<=end));
+  const allRegistrations=[...new Set(reportLegs.map(registration))].join(' / ');
+  const summary=[['CREW',p.name],['직책',crewPosition(p)],['조회 기준 UTC',utcDate(SIMULATED_ASOF)],['탑승 기번',allRegistrations],[],['항목','7일','28일','365일'],['Duty',...windows.map(d=>hh(p.tot.duty[d]||0))],['Flight',...windows.map(d=>p.tot.flight[d]===null?'N/A':hh(p.tot.flight[d]))]];
   // Display the timeline in working order: Briefing -> BLOCK -> G/T.
   // G/T belongs to the PRECEDING leg. Do not include the break between DUTYs.
-  const dutyRows=[['DUTY #','시작 UTC','종료 UTC','LEG 수','브리핑','BLOCK 합계','G/T 합계','DUTY 합계','7일 포함','28일 포함','365일 포함','LEG 경로']];
-  const legRows=[['DUTY #','LEG #','구분','일자 UTC','출발지','도착지','출발 UTC','도착 UTC','브리핑','BLOCK','G/T (해당 LEG 이후)','DUTY 7일','DUTY 28일','DUTY 365일','Pilot Flight 산입','Flight 7일','Flight 28일','Flight 365일','항공기','TRIP','LEG NO','원본 행']];
-  p.detail.duty.forEach((d,idx)=>{
+  const dutyRows=[['기번','DUTY #','시작 UTC','종료 UTC','LEG 수','브리핑','BLOCK 합계','G/T 합계','DUTY 합계','7일 포함','28일 포함','365일 포함','LEG 경로']];
+  const legRows=[['기번','DUTY #','LEG #','구분','일자 UTC','출발지','도착지','출발 UTC','도착 UTC','브리핑','BLOCK','G/T (해당 LEG 이후)','DUTY 7일','DUTY 28일','DUTY 365일','Pilot Flight 산입','Flight 7일','Flight 28일','Flight 365일','TRIP','LEG NO','원본 행']];
+  reportDuties.forEach((d,idx)=>{
     const no=idx+1;
-    dutyRows.push([no,exportDate(d.start),exportDate(d.end),d.legs.length,hh(DATA.meta.extraDutyMinutes),hh(d.block),hh(d.ground),hh(d.duty),...windows.map(n=>windowLabel(d.end,n)),d.legs.map(l=>icaoOnly(l.from)+'-'+icaoOnly(l.to)).join(' / ')]);
+    dutyRows.push([[...new Set(d.legs.map(registration))].join(' / '),no,exportDate(d.start),exportDate(d.end),d.legs.length,hh(DATA.meta.extraDutyMinutes),hh(d.block),hh(d.ground),hh(d.duty),...windows.map(n=>windowLabel(d.end,n)),d.legs.map(l=>icaoOnly(l.from)+'-'+icaoOnly(l.to)).join(' / ')]);
     const sorted=d.legs.slice().sort(cmp);
     sorted.forEach((l,i)=>{
       const next=i+1<sorted.length?sorted[i+1]:null;
       const groundAfter=next?Math.max(0,Math.round((next.dep-l.arr)/60000)):null;
       const eligible=p.kind==='pilot'&&l.people.some(q=>q.name.toLowerCase()===p.name.toLowerCase()&&q.kind==='pilot'&&q.flightEligible);
-      legRows.push([no,i+1,l.source==='actual'?'실제':'예정',utcDate(l.dep),icaoOnly(l.from),icaoOnly(l.to),exportDate(l.dep),exportDate(l.arr),i===0?hh(DATA.meta.extraDutyMinutes):'—',hh(l.block),next?hh(groundAfter):'—',...windows.map(n=>windowLabel(d.end,n)),eligible?'Y':'N',...windows.map(n=>eligible?windowLabel(l.arr,n):''),l.aircraft||'',l.trip||'',l.legNo||'',l.row||'']);
+      legRows.push([registration(l),no,i+1,l.source==='actual'?'실제':'예정',utcDate(l.dep),icaoOnly(l.from),icaoOnly(l.to),exportDate(l.dep),exportDate(l.arr),i===0?hh(DATA.meta.extraDutyMinutes):'—',hh(l.block),next?hh(groundAfter):'—',...windows.map(n=>windowLabel(d.end,n)),eligible?'Y':'N',...windows.map(n=>eligible?windowLabel(l.arr,n):''),l.trip||'',l.legNo||'',l.row||'']);
     });
   });
   const blob=createXlsx([['요약',summary],['DUTY 근거',dutyRows],['LEG 상세',legRows]]);
@@ -900,9 +927,10 @@ document.querySelectorAll('#crewTable thead th[data-sort]').forEach(th=>{
 });
 updateSortHeaders();
 $('asof').value=new Date().toISOString().slice(0,10);
-$('asof').min=new Date(Date.now()-365*86400000).toISOString().slice(0,10);
+$('asof').min='2000-01-01'; // As-of history is no longer limited by today's date
 $('asof').max=new Date(Date.now()+365*86400000).toISOString().slice(0,10);
-['asof','kind'].forEach(id=>$(id).addEventListener('change',refresh));
+$('asof').addEventListener('change',()=>{showCrewChoices();refresh();});
+$('kind').addEventListener('change',refresh);
 $('reload').onclick=load;
 $('selectAllPlans').onclick=()=>{for(const l of currentLegs())SELECTED_PLAN_IDS.add(l.id);showTrips();refresh();};
 $('clear').onclick=()=>{for(const l of currentLegs())SELECTED_PLAN_IDS.delete(l.id);showTrips();refresh();};
