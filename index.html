@@ -342,7 +342,50 @@ footer {
 @media (max-width:600px) {
   .crew-notice-legend { gap:6px 12px; }
   .crew-notice-rule { line-height:1.7; }
-  .brand { font-size:17px; letter-spacing:.025em; overflow-wrap:anywhere; }
+  /* Planned LEG toolbar: keep aircraft and both actions on a single row on mobile. */
+  .layout .panel:first-child > .controls {
+    display:grid;
+    grid-template-columns:minmax(68px,1fr) max-content max-content;
+    align-items:center;
+    column-gap:7px;
+    row-gap:8px;
+  }
+  .layout .panel:first-child > .controls #aircraftTab {
+    grid-column:1;
+    grid-row:1;
+    min-width:0;
+    width:100%;
+  }
+  .layout .panel:first-child > .controls #selectAllPlans {
+    grid-column:2;
+    grid-row:1;
+  }
+  .layout .panel:first-child > .controls #clear {
+    grid-column:3;
+    grid-row:1;
+  }
+  .layout .panel:first-child > .controls #selectAllPlans,
+  .layout .panel:first-child > .controls #clear {
+    white-space:nowrap;
+    font-size:12px;
+    padding:10px 8px;
+  }
+  .layout .panel:first-child > .controls #simInstruction {
+    grid-column:1 / -1;
+    grid-row:2;
+    line-height:1.45;
+  }
+  .layout .panel:first-child > .controls #selectedSummary {
+    grid-column:1 / -1;
+    grid-row:3;
+    line-height:1.45;
+    overflow-wrap:anywhere;
+  }
+  /* Mobile header typography only; desktop styles remain unchanged. */
+  .brand { font-size:23px; line-height:1.2; letter-spacing:.015em; overflow-wrap:anywhere; }
+  header .sub { font-size:10px; line-height:1.45; overflow-wrap:anywhere; }
+  header #updated { font-size:10px; line-height:1.4; word-break:break-word; }
+  header > div:first-child .sub { margin-top:5px; }
 }
 </style>
  </head>
@@ -509,9 +552,6 @@ footer {
     </div>
    </section>
   </main>
-  <footer>
-   근무시간 = 연속 DUTY의 (BLOCK + GROUND) + 01:30. 적용 가능한 기준이 없는 CREW는 ‘기준 미설정’으로 표시합니다. G/T 11:30 이상 DUTY 분리 규칙은 법정 휴식 충족 판정과 별개입니다.
-  </footer>
   </div>
   <script async="" defer="" src="https://accounts.google.com/gsi/client">
   </script>
