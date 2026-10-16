@@ -260,17 +260,22 @@ footer {
 }
 
 /* Mobile/table layout fixes: keep the wide table inside its full-width panel. */
-.layout { align-items:start; }
 .layout > .panel, .panel { min-width:0; }
+/* Desktop: retain the original 310px schedule list and equal-height columns. */
 #trips {
-    height:auto;
-    max-height:310px;
-    min-height:0;
-    overflow-y:auto;
-    overflow-x:hidden;
+    height:310px;
+    overflow:auto;
 }
 @media (max-width:950px) {
-    .layout { grid-template-columns:minmax(0,1fr); }
+    /* Mobile only: schedule list grows with its contents (up to 310px). */
+    #trips {
+        height:auto;
+        max-height:310px;
+        min-height:0;
+        overflow-y:auto;
+        overflow-x:hidden;
+    }
+    .layout { grid-template-columns:minmax(0,1fr); align-items:start; }
     main, .panel { min-width:0; }
     #crewTableWrap {
         display:block;
