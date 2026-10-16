@@ -864,8 +864,27 @@ function exportCrewExcel(name){
   const reportStart=end-365*86400000;
   const reportDuties=p.detail.duty.filter(d=>d.end>reportStart && d.end<=end);
   const reportLegs=reportDuties.flatMap(d=>d.legs.filter(l=>l.arr<=end));
-  const allRegistrations=[...new Set(reportLegs.map(registration))].join(' / ');
-  const summary=[['CREW',p.name],['직책',crewPosition(p)],['조회 기준 UTC',utcDate(SIMULATED_ASOF)],['탑승 기번',allRegistrations],[],['항목','7일','28일','365일'],['Duty',...windows.map(d=>hh(p.tot.duty[d]||0))],['Flight',...windows.map(d=>p.tot.flight[d]===null?'N/A':hh(p.tot.flight[d]))]];
+  // Count only this crew member's LEGs completed inside the selected 365-day UTC window.
+  // Use LEG arrival (rather than DUTY end) so the count matches the '365-day LEG count' label.
+  const countedLegs=p.legs.filter(l=>l.arr>reportStart && l.arr<=end);
+  const legCounts={HL8080:0,HL8372:0,other:0};
+  countedLegs.forEach(l=>{
+    const reg=registration(l);
+    if(reg==='HL8080'||reg==='HL8372')legCounts[reg]++;
+    else legCounts.other++;
+  });
+  const legCountBreakdown=`HL8080: ${legCounts.HL8080}회 / HL8372: ${legCounts.HL8372}회` +
+    (legCounts.other?` / 기타: ${legCounts.other}회`:'');
+  const summary=[
+    ['이름',p.name],
+    ['모듈',crewPosition(p)],
+    ['조회 기준 UTC',utcDate(SIMULATED_ASOF)],
+    ['총 LEG 수 (365일 기준)',`총 ${countedLegs.length}회 (${legCountBreakdown})`],
+    [],
+    ['항목','7일','28일','365일'],
+    ['Duty',...windows.map(d=>hh(p.tot.duty[d]||0))],
+    ['Flight',...windows.map(d=>p.tot.flight[d]===null?'N/A':hh(p.tot.flight[d]))]
+  ];
   // Display the timeline in working order: Briefing -> BLOCK -> G/T.
   // G/T belongs to the PRECEDING leg. Do not include the break between DUTYs.
   const dutyRows=[['기번','DUTY #','시작 UTC','종료 UTC','LEG 수','브리핑','BLOCK 합계','G/T 합계','DUTY 합계','7일 포함','28일 포함','365일 포함','LEG 경로']];
