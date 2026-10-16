@@ -252,11 +252,38 @@ footer {
         grid-template-columns:1fr;
     }
     .cards {
-        grid-template-columns:repeat(2,1fr);
+        grid-template-columns:repeat(3,minmax(0,1fr));
     }
     header {
         display:block;
     }
+}
+
+/* Summary cards: compact on both PC and mobile, always three in one row. */
+.cards {
+    grid-template-columns:repeat(3,minmax(0,1fr));
+    gap:10px;
+    margin-bottom:12px;
+}
+.cards .card {
+    min-width:0;
+    padding:10px 14px;
+    border-radius:10px;
+}
+.cards .card .muted {
+    font-size:11px;
+    line-height:1.25;
+}
+.cards .card .val {
+    font-size:24px;
+    line-height:1.15;
+    margin:4px 0 0;
+}
+@media (max-width:600px) {
+    .cards { gap:6px; margin-bottom:10px; }
+    .cards .card { padding:9px 8px; border-radius:9px; }
+    .cards .card .muted { font-size:10px; line-height:1.2; white-space:nowrap; }
+    .cards .card .val { font-size:21px; margin-top:4px; }
 }
 
 /* Mobile/table layout fixes: keep the wide table inside its full-width panel. */
