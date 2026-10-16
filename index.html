@@ -452,7 +452,12 @@ footer {
      </table>
     </div>
     <p class="hint">
-     시간 표기 HH:MM · 주황색: 주의(한도 80% 이상 90% 미만), 빨간색: 경계(한도 90% 이상) · 통계 기준: 각 DUTY 완료 시각/각 LEG 완료 시각이 조회 시점 이전이며, 이동식 기간 내에 포함된 기록. 경계를 걸치는 비행시간은 단순 종료시각 귀속 처리하므로 법정 정밀 산정과 차이가 날 수 있습니다.
+     <span style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
+      <span>시간 표기 HH:MM</span>
+      <span style="display:inline-flex;align-items:center;gap:5px;"><span style="display:inline-block;width:9px;height:9px;border-radius:3px;background:#E99A38;"></span>주의 80~90% 미만</span>
+      <span style="display:inline-flex;align-items:center;gap:5px;"><span style="display:inline-block;width:9px;height:9px;border-radius:3px;background:#E35A62;"></span>경계 90% 이상</span>
+     </span>
+     <span style="display:block;border-top:1px solid #283b55;margin-top:8px;padding-top:8px;">산정 기준: UTC 종료일 기준으로 누적시간을 계산하며, 조회 기간에 종료된 LEG 및 DUTY는 전체 시간을 반영합니다.</span>
     </p>
    </section>
   </main>
