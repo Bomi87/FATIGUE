@@ -4,7 +4,7 @@
   <meta charset="utf-8"/>
   <meta content="width=device-width,initial-scale=1" name="viewport"/>
   <title>
-   CREW DUTY DASHBOARD
+   CREW FATIGUE MANAGEMENT
   </title>
   <style>
 :root {
@@ -296,6 +296,20 @@ footer {
   #pdfReport .pdf-danger {background:#ffc6cc!important;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
   #pdfReport tr {break-inside:avoid;}
 }
+
+/* Responsive calculation legend: consistent on desktop and mobile. */
+.crew-calculation-notice { line-height:1.65; }
+.crew-notice-legend { display:flex; align-items:center; flex-wrap:wrap; gap:8px 14px; }
+.crew-notice-item { display:inline-flex; align-items:center; gap:5px; white-space:nowrap; }
+.crew-notice-dot { display:inline-block; width:9px; height:9px; border-radius:3px; flex-shrink:0; }
+.crew-notice-caution { background:#E99A38; }
+.crew-notice-danger { background:#E35A62; }
+.crew-notice-rule { border-top:1px solid #283b55; margin-top:8px; padding-top:8px; overflow-wrap:anywhere; }
+@media (max-width:600px) {
+  .crew-notice-legend { gap:6px 12px; }
+  .crew-notice-rule { line-height:1.7; }
+  .brand { font-size:17px; letter-spacing:.025em; overflow-wrap:anywhere; }
+}
 </style>
  </head>
  <body>
@@ -306,7 +320,7 @@ footer {
   <header>
    <div>
     <div class="brand">
-     CREW DUTY DASHBOARD
+     CREW FATIGUE MANAGEMENT
     </div>
     <div class="sub">
      ACTUAL OPERATIONS · PLANNED TRIP SIMULATION · DUTY / FLIGHT TIME
@@ -451,14 +465,14 @@ footer {
       </tbody>
      </table>
     </div>
-    <p class="hint">
-     <span style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
-      <span>시간 표기 HH:MM</span>
-      <span style="display:inline-flex;align-items:center;gap:5px;"><span style="display:inline-block;width:9px;height:9px;border-radius:3px;background:#E99A38;"></span>주의 80~90% 미만</span>
-      <span style="display:inline-flex;align-items:center;gap:5px;"><span style="display:inline-block;width:9px;height:9px;border-radius:3px;background:#E35A62;"></span>경계 90% 이상</span>
-     </span>
-     <span style="display:block;border-top:1px solid #283b55;margin-top:8px;padding-top:8px;">산정 기준: UTC 종료일 기준으로 누적시간을 계산하며, 조회 기간에 종료된 LEG 및 DUTY는 전체 시간을 반영합니다.</span>
-    </p>
+    <div class="hint crew-calculation-notice" aria-label="근무시간 계산 안내">
+      <div class="crew-notice-legend">
+        <span>시간 표기 HH:MM</span>
+        <span class="crew-notice-item"><span class="crew-notice-dot crew-notice-caution" aria-hidden="true"></span>주의 80~90% 미만</span>
+        <span class="crew-notice-item"><span class="crew-notice-dot crew-notice-danger" aria-hidden="true"></span>경계 90% 이상</span>
+      </div>
+      <div class="crew-notice-rule">산정 기준: UTC 종료일 기준으로 누적시간을 계산하며, 조회 기간에 종료된 LEG 및 DUTY는 전체 시간을 반영합니다.</div>
+    </div>
    </section>
   </main>
   <footer>
