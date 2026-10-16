@@ -279,6 +279,23 @@ footer {
 }
 .limit-reference strong { color:#dce7f8; font-weight:650; }
 .limit-reference .limit-heading { color:#90a9ca; font-weight:700; }
+
+/* PDF print preview of the filtered current roster. No external converter. */
+#pdfReport { display:none; }
+@media print {
+  @page { size:A4 landscape; margin:12mm; }
+  body {background:#fff!important;color:#111!important;}
+  body > :not(#pdfReport) {display:none!important;}
+  #pdfReport {display:block!important;font-family:Arial,'Malgun Gothic',sans-serif;font-size:10px;color:#111;}
+  #pdfReport h1 {font-size:18px;margin:0 0 6px;}
+  #pdfReport .report-meta {margin-bottom:12px;color:#555;}
+  #pdfReport table {width:100%;border-collapse:collapse;font-size:10px;white-space:nowrap;}
+  #pdfReport th,#pdfReport td {border:1px solid #ccc;padding:7px 5px;text-align:left;color:#111;background:white;}
+  #pdfReport th {background:#e8eef7!important;position:static;}
+  #pdfReport .pdf-warn {background:#ffe0b7!important;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  #pdfReport .pdf-danger {background:#ffc6cc!important;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  #pdfReport tr {break-inside:avoid;}
+}
 </style>
  </head>
  <body>
@@ -329,17 +346,14 @@ footer {
       <option value="all">
        전체
       </option>
-      <option value="pilot">
-       조종사 (PF / PM / ACM)
-      </option>
-      <option value="cabin">
-       객실/기타
-      </option>
+      <option value="조종">조종</option>
+      <option value="정비">정비</option>
+      <option value="객실">객실</option>
+      <option value="기타">기타</option>
      </select>
     </div>
-    <button class="primary" id="reload">
-     새로고침
-    </button>
+    <button class="primary" id="reload">새로고침</button>
+    <button type="button" id="exportPdf">목록 PDF 추출</button>
    </section>
    <section class="cards">
     <div class="card">
@@ -494,7 +508,15 @@ const utcDate=ms=>new Date(ms).toISOString().slice(0,10);
 const icaoOnly=v=>{const m=String(v??'').trim().toUpperCase().match(/^([A-Z]{4})(?=$|[^A-Z])/);return m?m[1]:String(v??'').trim();};
 function crewPosition(person){
  const key=String(person?.name||'').trim().replace(/\s+/g,' ').toUpperCase();
- return DATA?.crewPositions?.[key] || (person?.kind==='pilot'?'조종':'객실/기타');
+ return DATA?.crewPositions?.[key] || '';
+}
+function hasRosterPosition(person){return Boolean(crewPosition(person));}
+function crewCategory(person){
+ const pos=crewPosition(person).replace(/\s+/g,'');
+ if(pos==='조종')return '조종';
+ if(pos==='정비')return '정비';
+ if(pos==='객실')return '객실';
+ return '기타';
 }
 const cmp=(a,b)=>a.dep-b.dep;
 function dedupeKey(l){return [l.dateUTC,l.from,l.to,(l.flight||'').toUpperCase(),(l.aircraft||'').toUpperCase()].join('|')}
@@ -567,7 +589,7 @@ function showCrewChoices(){
  const active=recentActualCrewKeys();
  // Inactive people must not remain assigned invisibly after a reload.
  for(const key of CREW_SELECTED)if(!active.has(key))CREW_SELECTED.delete(key);
- const names=ALL_CREW.filter(p=>active.has(p.name.toLowerCase())&&p.name.toLowerCase().includes(($('crewSearch').value||'').trim().toLowerCase()));
+ const names=ALL_CREW.filter(p=>hasRosterPosition(p)&&active.has(p.name.toLowerCase())&&p.name.toLowerCase().includes(($('crewSearch').value||'').trim().toLowerCase()));
  $('crewChoices').innerHTML=names.map(p=>`<label class="trip"><input type="checkbox" data-crew="${esc(p.name.toLowerCase())}" ${CREW_SELECTED.has(p.name.toLowerCase())?'checked':''}><span>${esc(p.name)} <small>(${esc(crewPosition(p))})</small></span></label>`).join('')||'<p class="hint">CREW가 없습니다.</p>';
  $('crewChoices').querySelectorAll('input[data-crew]').forEach(el=>el.onchange=()=>{if(el.checked)CREW_SELECTED.add(el.dataset.crew);else CREW_SELECTED.delete(el.dataset.crew);refresh();});
 }
@@ -583,7 +605,7 @@ const {kept,skipped}=selectPlans(),all=buildPersonLegs(DATA.actual,kept);
 // Visibility: only crew with a completed ACTUAL LEG in the last 3 calendar months (relative to today).
 // Future simulation legs cannot make an otherwise inactive person visible.
 const recentActual=recentActualCrewKeys();
-let results=all.filter(p=>recentActual.has(p.name.toLowerCase())).map(p=>({...p,...compute(p,asof),assessment:null}));
+let results=all.filter(p=>hasRosterPosition(p)&&recentActual.has(p.name.toLowerCase())).map(p=>({...p,...compute(p,asof),assessment:null}));
 // Check rolling-limit peaks at EVERY included scheduled LEG end, not just the final one.
 results.forEach(p=>{
  p.assessment=assess(p,p.tot,threshold);
@@ -598,7 +620,8 @@ results.forEach(p=>{
 CURRENT_RESULTS=results;
 results.sort(compareCrew);
 updateSortHeaders();
-const visible=results.filter(p=>($('kind').value==='all'||p.kind===$('kind').value));
+const visible=results.filter(p=>($('kind').value==='all'||crewCategory(p)===$('kind').value));
+window.CURRENT_VISIBLE_CREW=visible;
 $('count').textContent=visible.length;
 $('exceed').textContent=visible.filter(p=>p.assessment.status==='경계').length;
 $('near').textContent=visible.filter(p=>p.assessment.status==='주의').length;
@@ -824,6 +847,32 @@ function exportCrewExcel(name){
   link.href=url;link.download='CREW_DUTY_'+p.name.replace(/[^a-zA-Z0-9가-힣_-]+/g,'_')+'_'+utcDate(SIMULATED_ASOF)+'.xlsx';
   document.body.appendChild(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),30000);
 }
+// Print the currently filtered CREW list as PDF using the browser's Save as PDF option.
+function exportCrewListPdf(){
+ if(!DATA || !Array.isArray(window.CURRENT_VISIBLE_CREW))return;
+ const visible=window.CURRENT_VISIBLE_CREW;
+ const names={all:'전체','조종':'조종','정비':'정비','객실':'객실','기타':'기타'};
+ const report=document.getElementById('pdfReport')||document.createElement('section');
+ report.id='pdfReport';
+ const cells=['Duty 7일','Duty 28일','Duty 365일','Flight 7일','Flight 28일','Flight 365일'];
+ const head=['CREW','직책',...cells];
+ const rows=visible.map(p=>{
+   const cells=[];
+   for(const type of ['duty','flight'])for(const days of [7,28,365]){
+     const min=p.tot?.[type]?.[days];
+     const limit=Number(DATA.meta.limits?.[p.kind]?.[type]?.[days]);
+     const frac=min==null||!(limit>0)?0:min/(limit*60);
+     const cls=frac>=.9?'pdf-danger':frac>=.8?'pdf-warn':'';
+     cells.push(`<td class="${cls}">${min==null?'—':hh(min)}</td>`);
+   }
+   return `<tr><td>${esc(p.name)}</td><td>${esc(crewPosition(p))}</td>${cells.join('')}</tr>`;
+ }).join('');
+ report.innerHTML=`<h1>CREW 누적시간</h1><div class="report-meta">조회 기준: ${esc(utcDate(SIMULATED_ASOF))} UTC · CREW 구분: ${esc(names[$('kind').value]||'전체')} · ${visible.length}명 · 주황색: 80~90% 미만 / 빨간색: 90% 이상</div><table><thead><tr>${head.map(x=>`<th>${esc(x)}</th>`).join('')}</tr></thead><tbody>${rows||'<tr><td colspan="8">해당 조건의 CREW 없음</td></tr>'}</tbody></table>`;
+ if(!report.isConnected)document.body.appendChild(report);
+ window.print();
+}
+$('exportPdf').addEventListener('click',exportCrewListPdf);
+
 // Only the dedicated export button downloads the Excel file.
 $('rows').addEventListener('click',e=>{
   const button=e.target.closest('button[data-export-crew]');
