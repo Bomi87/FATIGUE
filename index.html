@@ -693,10 +693,9 @@ header #updated.last-flight-box {min-width:260px;max-width:min(500px,100%);font-
     </div>
     <div class="hint crew-calculation-notice" aria-label="근무시간 계산 안내">
       <div class="crew-notice-legend">
-        <span>시간 표기 HH:MM</span>
         <span class="crew-notice-item"><span class="crew-notice-dot crew-notice-caution" aria-hidden="true"></span>주의 80~90% 미만</span>
         <span class="crew-notice-item"><span class="crew-notice-dot crew-notice-danger" aria-hidden="true"></span>경계 90~100% 미만</span>
-        <span class="crew-notice-item"><span class="crew-notice-dot crew-notice-exceed" aria-hidden="true"></span>⚠ 한도 초과 100% 이상</span>
+        <span class="crew-notice-item"><span class="crew-notice-dot crew-notice-exceed" aria-hidden="true"></span>⚠ 위험 100% 이상</span>
       </div>
       <div class="crew-notice-rule">산정 기준: UTC 종료일 기준으로 누적시간을 계산하며, 조회 기간에 종료된 LEG 및 DUTY는 전체 시간을 반영합니다.</div>
     </div>
@@ -939,8 +938,8 @@ $('rows').innerHTML=visible.length ? visible.map(p=>{
    // Missing limits remain uncolored. Never interpret an unconfigured limit as compliant.
    const fraction=Number.isFinite(limit)&&limit>0?minutes/(limit*60):null;
    const level=fraction!==null&&fraction>=1?'time-alert-exceed':fraction!==null&&fraction>=0.9?'time-alert-danger':fraction!==null&&fraction>=0.8?'time-alert-warn':'';
-   const label=level==='time-alert-exceed'?'한도 초과':level==='time-alert-danger'?'경계':level==='time-alert-warn'?'주의':'';
-   return `<td class="${level}" ${label?`title="${label} · 기준 ${hh(limit*60)} · 사용률 ${(fraction*100).toFixed(1)}%"`:''}>${level==='time-alert-exceed'?'<span class="limit-exceed-icon" aria-label="한도 초과"></span>':''}${hh(minutes)}</td>`;
+   const label=level==='time-alert-exceed'?'위험':level==='time-alert-danger'?'경계':level==='time-alert-warn'?'주의':'';
+   return `<td class="${level}" ${label?`title="${label} · 기준 ${hh(limit*60)} · 사용률 ${(fraction*100).toFixed(1)}%"`:''}>${level==='time-alert-exceed'?'<span class="limit-exceed-icon" aria-label="위험"></span>':''}${hh(minutes)}</td>`;
  };
  return `<tr data-name="${esc(p.name)}"><td>${esc(p.name)}</td><td>${esc(crewPosition(p))}</td>${[7,28,365].map(n=>timeCell('duty',n)).join('')}${[7,28,365].map(n=>timeCell('flight',n)).join('')}<td><button type="button" class="crew-export-btn" data-export-crew="${esc(p.name)}" title="${esc(p.name)} 산출근거 엑셀 다운로드">엑셀추출</button></td></tr>`;
 }).join('') : '<tr><td colspan="9">해당 기준일의 최근 365일에 유효한 CREW 기록이 없습니다. 데이터 로딩 상태와 RAW 날짜를 확인해 주세요.</td></tr>';
@@ -1337,7 +1336,7 @@ function histAnalyze(){
     const pct=minutes/(limit*60)*100;
     if(pct>HIST_DIAG.peak){HIST_DIAG.peak=pct;HIST_DIAG.peakLabel=`${person.name} · ${category==='duty'?'Duty':'Flight'} ${windowDays}일 · ${utcDate(date)}`;}
     if(pct<80)continue;
-    const level=pct>=100?'over':pct>=90?'border':'warn';
+    const level=pct>=100?'over':pct>=90?'border':'warn'; // 100% exactly: limit reached; above 100%: limit exceeded
     output.push({date:utcDate(date),name:person.name,kind:crewPosition(person),category,windowDays,minutes,limit,pct,level});
    }
   }
@@ -1348,8 +1347,8 @@ function histFiltered(){
  return HIST_ROWS.filter(x=>HIST_APPLIED_NAMES===null||HIST_APPLIED_NAMES.has(histNameKey(x.name)));
 }
 function histRender(){
- const allRows=histFiltered(),rows=allRows.slice(0,500),label={over:'한도 초과',border:'경계',warn:'주의'},cls={over:'history-status-over',border:'history-status-border',warn:'history-status-warn'};
- $('historySummary').textContent=`${HIST_APPLIED_DATES.start} ~ ${HIST_APPLIED_DATES.end} · ${(histUTCday(HIST_APPLIED_DATES.end)-histUTCday(HIST_APPLIED_DATES.start))/86400000+1}일 검사 · 전체 CREW ${HIST_DIAG.crew}명 · 선택 CREW ${HIST_APPLIED_NAMES===null?'전체':HIST_APPLIED_NAMES.size+'명'} · 운항 LEG ${HIST_DIAG.legs}건 · 검사 결과 ${HIST_ROWS.length.toLocaleString()}건 · 조건 일치 ${allRows.length.toLocaleString()}건 (초과 ${allRows.filter(x=>x.level==='over').length} / 경계 ${allRows.filter(x=>x.level==='border').length} / 주의 ${allRows.filter(x=>x.level==='warn').length}) · 최대 사용률 ${HIST_DIAG.peak.toFixed(1)}%${HIST_DIAG.peakLabel?' ('+HIST_DIAG.peakLabel+')':''} · 화면 최대 500건, PDF 전체 추출`;
+ const allRows=histFiltered(),rows=allRows.slice(0,500),label={over:'위험',border:'경계',warn:'주의'},cls={over:'history-status-over',border:'history-status-border',warn:'history-status-warn'};
+ $('historySummary').textContent=`${HIST_APPLIED_DATES.start} ~ ${HIST_APPLIED_DATES.end} · ${(histUTCday(HIST_APPLIED_DATES.end)-histUTCday(HIST_APPLIED_DATES.start))/86400000+1}일 검사 · 전체 CREW ${HIST_DIAG.crew}명 · 선택 CREW ${HIST_APPLIED_NAMES===null?'전체':HIST_APPLIED_NAMES.size+'명'} · 운항 LEG ${HIST_DIAG.legs}건 · 검사 결과 ${HIST_ROWS.length.toLocaleString()}건 · 조건 일치 ${allRows.length.toLocaleString()}건 (위험 ${allRows.filter(x=>x.level==='over').length} / 경계 ${allRows.filter(x=>x.level==='border').length} / 주의 ${allRows.filter(x=>x.level==='warn').length}) · 최대 사용률 ${HIST_DIAG.peak.toFixed(1)}%${HIST_DIAG.peakLabel?' ('+HIST_DIAG.peakLabel+')':''} · 화면 최대 500건, PDF 전체 추출`;
  // Render in chunks to avoid massive synchronous HTML work on mobile.
  const tbody=$('historyRows');tbody.replaceChildren();
  if(!rows.length){tbody.innerHTML='<tr><td colspan="8">'+(HIST_DIAG.legs===0?'조회 기간에 사용할 실제 운항기록이 없습니다. 데이터를 새로고침하고 RAW 기록의 기간을 확인해 주세요.':'해당 조건의 이력이 없습니다. (검사한 최대 사용률 '+HIST_DIAG.peak.toFixed(1)+'% · 주의 기준 80%)')+'</td></tr>';return;}
@@ -1387,7 +1386,7 @@ function histRefresh(){
 function histPDF(){
  if($('historyPdf').disabled || !HIST_APPLIED_DATES.start)return;
  const rows=histFiltered();
- const labels={over:'한도 초과',border:'경계',warn:'주의'};
+ const labels={over:'위험',border:'경계',warn:'주의'};
  const classes={over:'history-print-over',border:'history-print-border',warn:'history-print-warn'};
  const report=document.getElementById('pdfReport')||document.createElement('section');
  report.id='pdfReport';
@@ -1398,7 +1397,7 @@ function histPDF(){
   const c=classes[x.level];
   return `<tr><td>${esc(x.date)}</td><td>${esc(x.name)}</td><td>${esc(x.kind)}</td><td>${x.category==='duty'?'Duty':'Flight'} ${x.windowDays}일</td><td class="${c}">${hh(x.minutes)}</td><td>${hh(x.limit*60)}</td><td class="${c}">${x.pct.toFixed(1)}%</td><td class="${c}">${labels[x.level]}</td></tr>`;
  }).join('');
- report.innerHTML=`<h1>CREW 한도 이력 조회 · 실제 운항</h1><div class="report-meta">Start: ${esc(HIST_APPLIED_DATES.start)} / End: ${esc(HIST_APPLIED_DATES.end)} (UTC)<br>선택 승무원: ${HIST_APPLIED_NAMES===null?'전체':HIST_APPLIED_NAMES.size+'명'} · 총 ${rows.length.toLocaleString()}건 (한도 초과 ${counts.over}, 경계 ${counts.border}, 주의 ${counts.warn})<br>주의 80~90% 미만 · 경계 90~100% 미만 · 한도 초과 100% 이상 · 예정 LEG 제외</div><table><thead><tr><th>기준일</th><th>CREW</th><th>구분</th><th>산정 기준</th><th>누적시간</th><th>한도</th><th>사용률</th><th>상태</th></tr></thead><tbody>${htmlRows||'<tr><td colspan="8">해당 조건의 이력이 없습니다.</td></tr>'}</tbody></table>`;
+ report.innerHTML=`<h1>CREW 한도 이력 조회 · 실제 운항</h1><div class="report-meta">Start: ${esc(HIST_APPLIED_DATES.start)} / End: ${esc(HIST_APPLIED_DATES.end)} (UTC)<br>선택 승무원: ${HIST_APPLIED_NAMES===null?'전체':HIST_APPLIED_NAMES.size+'명'} · 총 ${rows.length.toLocaleString()}건 (위험 ${counts.over}, 경계 ${counts.border}, 주의 ${counts.warn})<br>주의 80~90% 미만 · 경계 90~100% 미만 · 위험 100% 이상 · 예정 LEG 제외</div><table><thead><tr><th>기준일</th><th>CREW</th><th>구분</th><th>산정 기준</th><th>누적시간</th><th>한도</th><th>사용률</th><th>상태</th></tr></thead><tbody>${htmlRows||'<tr><td colspan="8">해당 조건의 이력이 없습니다.</td></tr>'}</tbody></table>`;
  if(!report.isConnected)document.body.appendChild(report);
  window.print(); // In the browser print dialog choose Save as PDF.
 }
