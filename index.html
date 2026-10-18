@@ -440,6 +440,35 @@ footer {
 .history-note {margin-top:10px;color:#9fb3cc;font-size:11px;line-height:1.6;}
 @media(max-width:600px) { .history-open {margin-left:0;} .history-dialog {padding:11px;max-height:94dvh;} .history-scroll th,.history-scroll td {padding:8px;} }
 
+
+/* Historical CREW multiselect: grouped from the approved roster. */
+.history-crew-picker {position:relative;min-width:230px;flex:1 1 240px;}
+.history-crew-toggle {width:100%;text-align:left;display:flex;justify-content:space-between;align-items:center;gap:8px;}
+.history-crew-menu[hidden] {display:none!important;}
+.history-crew-menu {position:absolute;z-index:100;top:calc(100% + 5px);left:0;width:min(400px,90vw);max-height:min(410px,55dvh);overflow:auto;padding:10px;background:#172842;border:1px solid #456386;border-radius:10px;box-shadow:0 12px 35px #0009;}
+.history-crew-tools {display:flex;gap:7px;margin-bottom:9px;}
+.history-crew-tools button {flex:1;font-size:12px;min-height:34px;padding:6px;}
+.history-crew-group {border-top:1px solid #344b66;padding:8px 0;}
+.history-crew-group-head {display:flex;align-items:center;gap:8px;font-weight:700;color:#d8e8fa;padding:3px 2px 7px;}
+.history-crew-group-head input,.history-crew-person input {width:16px;height:16px;flex:none;margin:0;accent-color:#5c99ed;}
+.history-crew-person {display:flex;gap:9px;align-items:center;padding:7px 8px 7px 22px;font-size:13px;cursor:pointer;}
+.history-crew-person:hover {background:#233e5d;border-radius:6px;}
+.history-crew-group-head span {font-size:12px;color:#a9bbd3;}
+@media(max-width:600px){.history-crew-picker {flex:1 1 100%;}.history-crew-menu {width:100%;max-height:50dvh;}.history-crew-person {font-size:16px;}}
+
+/* Simulation CREW list: grouped multi-select by approved roster position. */
+.sim-crew-tools {display:flex;align-items:center;gap:7px;flex-wrap:wrap;padding:6px 2px 10px;border-bottom:1px solid #344b66;}
+.sim-crew-tools span {margin-right:auto;color:#a9bbd3;font-size:12px;}
+.sim-crew-tools button {font-size:12px;padding:6px 9px;min-height:34px;}
+.sim-crew-group {padding:8px 0;border-bottom:1px solid #30445d;}
+.sim-crew-heading {display:flex;align-items:center;gap:9px;padding:5px 4px 9px;color:#dce9fa;cursor:pointer;}
+.sim-crew-heading small {font-size:11px;color:#9fb3cc;}
+.sim-crew-person {display:flex;align-items:center;gap:9px;padding:9px 8px 9px 24px;font-size:12px;border-top:1px solid #253951;cursor:pointer;}
+.sim-crew-person small {color:#9db1cd;}
+.sim-crew-person:hover {background:#203853;}
+.sim-crew-heading input,.sim-crew-person input {width:16px;height:16px;flex:none;margin:0;accent-color:#5c99ed;}
+.sim-no-match {padding:4px 24px;}
+@media(max-width:600px){.sim-crew-person {font-size:14px;} .sim-crew-tools button {font-size:12px;}}
 </style>
  </head>
  <body>
@@ -605,17 +634,24 @@ footer {
  <section class="history-dialog" role="dialog" aria-modal="true" aria-labelledby="historyTitle">
   <div class="history-top"><h2 id="historyTitle">한도 이력 조회 · 실제 운항</h2><button id="historyClose" type="button" aria-label="닫기">닫기 ✕</button></div>
   <div class="history-filter">
-   <label for="historyStart">검사 시작일 UTC</label>
-   <input id="historyStart" type="date" aria-label="검사 시작일 UTC"/>
+   <label for="historyStart">검사 시작일</label>
+   <input id="historyStart" type="date" aria-label="검사 시작일"/>
+   <label for="historyEnd">검사 종료일</label>
+   <input id="historyEnd" type="date" aria-label="검사 종료일"/>
    <label for="historyLevel">상태</label>
    <select id="historyLevel"><option value="all">전체</option><option value="over">한도 초과</option><option value="border">경계</option><option value="warn">주의</option></select>
-   <label for="historyCrew">CREW</label>
-   <input id="historyCrew" type="search" placeholder="이름 검색" style="min-width:120px;flex:1;"/>
+   <div id="historyCrewPicker" class="history-crew-picker">
+    <button id="historyCrewToggle" class="history-crew-toggle" type="button" aria-expanded="false" aria-controls="historyCrewMenu">전체 승무원 <span aria-hidden="true">▾</span></button>
+    <div id="historyCrewMenu" class="history-crew-menu" hidden>
+     <div class="history-crew-tools"><button type="button" id="historyCrewAll">전체 선택</button><button type="button" id="historyCrewNone">전체 해제</button></div>
+     <div id="historyCrewGroups"></div>
+    </div>
+   </div>
    <button id="historyCsv" type="button">CSV 추출</button>
   </div>
   <p id="historySummary" class="history-summary" aria-live="polite">조회 대기 중</p>
-  <div class="history-scroll"><table><thead><tr><th>기준일 UTC</th><th>CREW</th><th>구분</th><th>산정 기준</th><th>누적시간</th><th>한도</th><th>사용률</th><th>상태</th></tr></thead><tbody id="historyRows"></tbody></table></div>
-  <div class="history-note">검사 시작일부터 상단 조회 기준 UTC 날짜까지 양 끝 날짜를 포함하여 하루씩 검사합니다. 7/28/365일은 각 날짜의 누적시간 산정 기준이며 검사 기간 선택이 아닙니다. · 기준일별 00:00~23:59:59 UTC 종료 기록 기준 · 80% 이상~90% 미만 주의 / 90% 이상~100% 미만 경계 / 100% 이상 한도 초과 · 예정 LEG 제외 · 해당 날짜에 기준을 충족한 기록을 하루 단위로 표시합니다. 동일 상태가 여러 날 지속되면 날짜별로 표시됩니다.</div>
+  <div class="history-scroll"><table><thead><tr><th>기준일</th><th>CREW</th><th>구분</th><th>산정 기준</th><th>누적시간</th><th>한도</th><th>사용률</th><th>상태</th></tr></thead><tbody id="historyRows"></tbody></table></div>
+  <div class="history-note">검사 시작일부터 검사 종료일까지 양 끝 날짜를 포함하여 선택한 승무원의 한도 이력을 표시합니다. 기본값은 전체 승무원입니다. 7/28/365일은 각 날짜의 누적시간 산정 기준이며 검사 기간 선택이 아닙니다. · 기준일별 00:00~23:59:59 UTC 종료 기록 기준 · 80% 이상~90% 미만 주의 / 90% 이상~100% 미만 경계 / 100% 이상 한도 초과 · 예정 LEG 제외 · CREW 목록에서 조종/객실/정비/기타 그룹별 다중 선택이 가능합니다. 해당 날짜에 기준을 충족한 기록을 하루 단위로 표시합니다. 동일 상태가 여러 날 지속되면 날짜별로 표시됩니다.</div>
  </section>
 </div>
   <script async="" defer="" src="https://accounts.google.com/gsi/client">
@@ -753,9 +789,37 @@ function showCrewChoices(){
  const active=recentActualCrewKeys(Date.parse($('asof').value+'T00:00:00Z'));
  // Inactive people must not remain assigned invisibly after a reload.
  for(const key of CREW_SELECTED)if(!active.has(key))CREW_SELECTED.delete(key);
- const names=ALL_CREW.filter(p=>hasRosterPosition(p)&&active.has(p.name.toLowerCase())&&p.name.toLowerCase().includes(($('crewSearch').value||'').trim().toLowerCase()));
- $('crewChoices').innerHTML=names.map(p=>`<label class="trip"><input type="checkbox" data-crew="${esc(p.name.toLowerCase())}" ${CREW_SELECTED.has(p.name.toLowerCase())?'checked':''}><span>${esc(p.name)} <small>(${esc(crewPosition(p))})</small></span></label>`).join('')||'<p class="hint">CREW가 없습니다.</p>';
- $('crewChoices').querySelectorAll('input[data-crew]').forEach(el=>el.onchange=()=>{if(el.checked)CREW_SELECTED.add(el.dataset.crew);else CREW_SELECTED.delete(el.dataset.crew);refresh();});
+ const eligible=ALL_CREW.filter(p=>hasRosterPosition(p)&&active.has(p.name.toLowerCase()));
+ const query=($('crewSearch').value||'').trim().toLowerCase();
+ const groups={'조종':[],'객실':[],'정비':[],'기타':[]};
+ for(const person of eligible){
+   const category=crewCategory(person);
+   groups[Object.hasOwn(groups,category)?category:'기타'].push(person);
+ }
+ const totalSelected=eligible.filter(p=>CREW_SELECTED.has(p.name.toLowerCase())).length;
+ $('crewChoices').innerHTML=`<div class="sim-crew-tools"><span>선택 ${totalSelected}/${eligible.length}명</span><button type="button" data-sim-action="all">전체 선택</button><button type="button" data-sim-action="none">전체 해제</button></div>`+
+ Object.entries(groups).map(([category,people])=>{
+   if(!people.length)return '';
+   const selectedCount=people.filter(p=>CREW_SELECTED.has(p.name.toLowerCase())).length;
+   const visible=people.filter(p=>p.name.toLowerCase().includes(query));
+   return `<section class="sim-crew-group"><label class="sim-crew-heading"><input type="checkbox" data-sim-group="${esc(category)}" ${selectedCount===people.length?'checked':''}><strong>${esc(category)}</strong><small>${selectedCount}/${people.length}명</small></label>`+
+     visible.map(p=>`<label class="sim-crew-person"><input type="checkbox" data-crew="${esc(p.name.toLowerCase())}" ${CREW_SELECTED.has(p.name.toLowerCase())?'checked':''}><span>${esc(p.name)} <small>(${esc(crewPosition(p))})</small></span></label>`).join('')+
+     (query&&!visible.length?'<p class="hint sim-no-match">검색 일치 인원 없음</p>':'')+'</section>';
+ }).join('') || '<p class="hint">CREW가 없습니다.</p>';
+ $('crewChoices').querySelectorAll('[data-crew]').forEach(el=>el.onchange=()=>{
+   if(el.checked)CREW_SELECTED.add(el.dataset.crew);else CREW_SELECTED.delete(el.dataset.crew);
+   showCrewChoices();refresh();
+ });
+ $('crewChoices').querySelectorAll('[data-sim-group]').forEach(el=>el.onchange=()=>{
+   const group=groups[el.dataset.simGroup]||[];
+   for(const person of group){const key=person.name.toLowerCase();if(el.checked)CREW_SELECTED.add(key);else CREW_SELECTED.delete(key);}
+   showCrewChoices();refresh();
+ });
+ $('crewChoices').querySelectorAll('[data-sim-action]').forEach(el=>el.onclick=()=>{
+   if(el.dataset.simAction==='all')for(const person of eligible)CREW_SELECTED.add(person.name.toLowerCase());
+   else CREW_SELECTED.clear();
+   showCrewChoices();refresh();
+ });
 }
 function refresh(){if(!DATA)return;
 const selectedLegs=selectPlans().kept;
@@ -1095,7 +1159,57 @@ updateSortHeaders();
 
 // Historic actual-only window scan. One RAW load; timestamp-sorted prefix sums,
 // not a full duty recomputation for every day. UI filters are client-only.
-let HIST_ROWS=[],HIST_KEY='',HIST_PREVIOUS_FOCUS=null;
+let HIST_ROWS=[],HIST_KEY='',HIST_PREVIOUS_FOCUS=null,HIST_DIAG={crew:0,legs:0,peak:0,peakLabel:'',coverage:''};
+// null = all roster members; otherwise the selected normalized name keys.
+let HIST_SELECTED_NAMES=null;
+const histNameKey=s=>String(s||'').trim().replace(/\s+/g,' ').toUpperCase();
+function histRosterGroups(){
+ const groups={'조종':[],'객실':[],'정비':[],'기타':[]};
+ for(const [key,position] of Object.entries(DATA?.crewPositions||{})){
+  const kind=String(position).replace(/\s+/g,'');
+  const group=Object.hasOwn(groups,kind)?kind:'기타';
+  groups[group].push({key:histNameKey(key),name:key});
+ }
+ for(const group of Object.values(groups))group.sort((a,b)=>a.name.localeCompare(b.name));
+ return groups;
+}
+function histCrewChosen(key){return HIST_SELECTED_NAMES===null||HIST_SELECTED_NAMES.has(key);}
+function histCrewUpdate(){
+ const groups=histRosterGroups();
+ const all=Object.values(groups).flat(),chosen=all.filter(x=>histCrewChosen(x.key)).length;
+ const title=HIST_SELECTED_NAMES===null?'전체 승무원':`${chosen}명 선택`;
+ $('historyCrewToggle').innerHTML=`${esc(title)} <span aria-hidden="true">▾</span>`;
+ $('historyCrewGroups').innerHTML=Object.entries(groups).map(([category,people])=>{
+  if(!people.length)return '';
+  const count=people.filter(x=>histCrewChosen(x.key)).length;
+  return `<section class="history-crew-group"><label class="history-crew-group-head"><input type="checkbox" data-hist-group="${esc(category)}" ${count===people.length?'checked':''}><strong>${esc(category)}</strong><span>(${count}/${people.length})</span></label>`+
+   people.map(x=>`<label class="history-crew-person"><input type="checkbox" data-hist-name="${esc(x.key)}" ${histCrewChosen(x.key)?'checked':''}><span>${esc(x.name)}</span></label>`).join('')+'</section>';
+ }).join('');
+}
+function histCrewApplySelection(keys){
+ const all=Object.values(histRosterGroups()).flat().map(x=>x.key);
+ HIST_SELECTED_NAMES=keys.size===all.length?null:new Set(keys);
+ histCrewUpdate();histRender();
+}
+$('historyCrewToggle').addEventListener('click',()=>{
+ const menu=$('historyCrewMenu');menu.hidden=!menu.hidden;
+ $('historyCrewToggle').setAttribute('aria-expanded',String(!menu.hidden));
+});
+$('historyCrewAll').addEventListener('click',()=>histCrewApplySelection(new Set(Object.values(histRosterGroups()).flat().map(x=>x.key))));
+$('historyCrewNone').addEventListener('click',()=>histCrewApplySelection(new Set()));
+$('historyCrewGroups').addEventListener('change',e=>{
+ const box=e.target;if(box.type!=='checkbox')return;
+ const keys=new Set(Object.values(histRosterGroups()).flat().filter(x=>histCrewChosen(x.key)).map(x=>x.key));
+ if(box.dataset.histName){if(box.checked)keys.add(box.dataset.histName);else keys.delete(box.dataset.histName);}
+ else if(box.dataset.histGroup){for(const person of histRosterGroups()[box.dataset.histGroup]||[]){if(box.checked)keys.add(person.key);else keys.delete(person.key);}}
+ histCrewApplySelection(keys);
+});
+document.addEventListener('click',e=>{
+ if(!$('historyCrewPicker').contains(e.target)){
+  $('historyCrewMenu').hidden=true;$('historyCrewToggle').setAttribute('aria-expanded','false');
+ }
+});
+
 function histUTCday(s){const t=Date.parse(String(s)+'T00:00:00Z');return Number.isFinite(t)?t:null;}
 function histPrefix(items){
  items.sort((a,b)=>a.t-b.t);
@@ -1110,7 +1224,7 @@ function histRange(series,startExclusive,endInclusive){
 }
 function histAnalyze(){
  if(!DATA)return [];
- const ending=histUTCday($('asof').value);
+ const ending=histUTCday($('historyEnd').value);
  if(ending===null)return [];
  const first=histUTCday($('historyStart').value);
  if(first===null||first>ending)return [];
@@ -1119,6 +1233,7 @@ function histAnalyze(){
  const raw=DATA.actual.filter(l=>l.arr>first-366*86400000&&l.dep<=end);
  const people=buildPersonLegs(raw,[]).filter(hasRosterPosition);
  const output=[];
+ HIST_DIAG={crew:people.length,legs:raw.length,peak:0,peakLabel:'',coverage:DATA.meta?.coverageStart||''};
  for(const person of people){
   const ds=duties(person.legs,DATA.meta.minGroundBreakHours);
   const duty=histPrefix(ds.filter(x=>x.end<=end).map(x=>({t:x.end,minutes:x.duty})));
@@ -1130,6 +1245,7 @@ function histAnalyze(){
     if(!(limit>0))continue;
     const minutes=histRange(category==='duty'?duty:flight,dayEnd-windowDays*86400000,dayEnd);
     const pct=minutes/(limit*60)*100;
+    if(pct>HIST_DIAG.peak){HIST_DIAG.peak=pct;HIST_DIAG.peakLabel=`${person.name} · ${category==='duty'?'Duty':'Flight'} ${windowDays}일 · ${utcDate(date)}`;}
     if(pct<80)continue;
     const level=pct>=100?'over':pct>=90?'border':'warn';
     output.push({date:utcDate(date),name:person.name,kind:crewPosition(person),category,windowDays,minutes,limit,pct,level});
@@ -1139,15 +1255,15 @@ function histAnalyze(){
  return output.sort((a,b)=>b.date.localeCompare(a.date)||({over:0,border:1,warn:2}[a.level]-{over:0,border:1,warn:2}[b.level])||b.pct-a.pct||a.name.localeCompare(b.name));
 }
 function histFiltered(){
- const lvl=$('historyLevel').value,q=$('historyCrew').value.trim().toLowerCase(),kind=$('kind').value;
- return HIST_ROWS.filter(x=>(lvl==='all'||x.level===lvl)&&(!q||x.name.toLowerCase().includes(q))&&(kind==='all'||x.kind===kind));
+ const lvl=$('historyLevel').value;
+ return HIST_ROWS.filter(x=>(lvl==='all'||x.level===lvl)&&histCrewChosen(histNameKey(x.name)));
 }
 function histRender(){
  const allRows=histFiltered(),rows=allRows.slice(0,500),label={over:'한도 초과',border:'경계',warn:'주의'},cls={over:'history-status-over',border:'history-status-border',warn:'history-status-warn'};
- $('historySummary').textContent=`${$('historyStart').value} ~ ${$('asof').value} UTC · ${(histUTCday($('asof').value)-histUTCday($('historyStart').value))/86400000+1}일 검사 · 검사 결과 ${HIST_ROWS.length.toLocaleString()}건 · 조건 일치 ${allRows.length.toLocaleString()}건 (초과 ${allRows.filter(x=>x.level==='over').length} / 경계 ${allRows.filter(x=>x.level==='border').length} / 주의 ${allRows.filter(x=>x.level==='warn').length}) · 화면 최대 500건, CSV 전체 추출`;
+ $('historySummary').textContent=`${$('historyStart').value} ~ ${$('historyEnd').value} · ${(histUTCday($('historyEnd').value)-histUTCday($('historyStart').value))/86400000+1}일 검사 · 전체 CREW ${HIST_DIAG.crew}명 · 선택 CREW ${HIST_SELECTED_NAMES===null?'전체':HIST_SELECTED_NAMES.size+'명'} · 운항 LEG ${HIST_DIAG.legs}건 · 검사 결과 ${HIST_ROWS.length.toLocaleString()}건 · 조건 일치 ${allRows.length.toLocaleString()}건 (초과 ${allRows.filter(x=>x.level==='over').length} / 경계 ${allRows.filter(x=>x.level==='border').length} / 주의 ${allRows.filter(x=>x.level==='warn').length}) · 최대 사용률 ${HIST_DIAG.peak.toFixed(1)}%${HIST_DIAG.peakLabel?' ('+HIST_DIAG.peakLabel+')':''} · 화면 최대 500건, CSV 전체 추출`;
  // Render in chunks to avoid massive synchronous HTML work on mobile.
  const tbody=$('historyRows');tbody.replaceChildren();
- if(!rows.length){tbody.innerHTML='<tr><td colspan="8">해당 조건의 이력이 없습니다.</td></tr>';return;}
+ if(!rows.length){tbody.innerHTML='<tr><td colspan="8">'+(HIST_DIAG.legs===0?'조회 기간에 사용할 실제 운항기록이 없습니다. 데이터를 새로고침하고 RAW 기록의 기간을 확인해 주세요.':'해당 조건의 이력이 없습니다. (검사한 최대 사용률 '+HIST_DIAG.peak.toFixed(1)+'% · 주의 기준 80%)')+'</td></tr>';return;}
  const chunkSize=250;
  for(let i=0;i<rows.length;i+=chunkSize){
   const html=rows.slice(i,i+chunkSize).map(x=>`<tr><td>${x.date}</td><td>${esc(x.name)}</td><td>${esc(x.kind)}</td><td>${x.category==='duty'?'Duty':'Flight'} ${x.windowDays}일</td><td>${hh(x.minutes)}</td><td>${hh(x.limit*60)}</td><td>${x.pct.toFixed(1)}%</td><td class="${cls[x.level]}">${label[x.level]}</td></tr>`).join('');
@@ -1159,24 +1275,24 @@ function histOpen(){
  HIST_PREVIOUS_FOCUS=document.activeElement;
  $('historyModal').hidden=false;$('historyModal').setAttribute('aria-hidden','false');
  document.body.style.overflow='hidden';
- histRefresh();$('historyClose').focus();
+ histCrewUpdate();histRefresh();$('historyClose').focus();
 }
 function histClose(){
  $('historyModal').hidden=true;$('historyModal').setAttribute('aria-hidden','true');
- document.body.style.overflow='';HIST_PREVIOUS_FOCUS?.focus?.();
+ document.body.style.overflow='';$('historyCrewMenu').hidden=true;$('historyCrewToggle').setAttribute('aria-expanded','false');HIST_PREVIOUS_FOCUS?.focus?.();
 }
 function histRefresh(){
- const start=histUTCday($('historyStart').value),end=histUTCday($('asof').value);
- if(start===null||end===null||start>end){HIST_ROWS=[];HIST_KEY='';$('historyRows').replaceChildren();$('historySummary').textContent='검사 시작일은 조회 기준 UTC 날짜보다 늦을 수 없습니다.';return;}
- const key=[$('asof').value,$('historyStart').value,DATA?.meta?.generatedAt||''].join('|');
+ const start=histUTCday($('historyStart').value),end=histUTCday($('historyEnd').value);
+ if(start===null||end===null||start>end){HIST_ROWS=[];HIST_KEY='';$('historyRows').replaceChildren();$('historySummary').textContent='검사 시작일은 검사 종료일보다 늦을 수 없습니다.';return;}
+ const key=[$('historyEnd').value,$('historyStart').value,DATA?.meta?.generatedAt||''].join('|');
  if(key!==HIST_KEY){$('historySummary').textContent='이력 계산 중…';HIST_ROWS=histAnalyze();HIST_KEY=key;}
  histRender();
 }
 function histCSV(){
  const rows=histFiltered();const quote=x=>'"'+String(x).replace(/"/g,'""')+'"';
- const lines=[['기준일 UTC','CREW','구분','기준','누적 HH:MM','한도 HH:MM','사용률 %','상태'],...rows.map(x=>[x.date,x.name,x.kind,`${x.category==='duty'?'Duty':'Flight'} ${x.windowDays}일`,hh(x.minutes),hh(x.limit*60),x.pct.toFixed(1),{over:'한도 초과',border:'경계',warn:'주의'}[x.level]])];
+ const lines=[['기준일','CREW','구분','기준','누적 HH:MM','한도 HH:MM','사용률 %','상태'],...rows.map(x=>[x.date,x.name,x.kind,`${x.category==='duty'?'Duty':'Flight'} ${x.windowDays}일`,hh(x.minutes),hh(x.limit*60),x.pct.toFixed(1),{over:'한도 초과',border:'경계',warn:'주의'}[x.level]])];
  const blob=new Blob(['\ufeff'+lines.map(a=>a.map(quote).join(',')).join('\r\n')],{type:'text/csv;charset=utf-8'});
- const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=`CREW_LIMIT_HISTORY_${$('historyStart').value}_${$('asof').value}.csv`;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
+ const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=`CREW_LIMIT_HISTORY_${$('historyStart').value}_${$('historyEnd').value}.csv`;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
 $('historyOpen').addEventListener('click',histOpen);
 $('historyClose').addEventListener('click',histClose);
@@ -1184,15 +1300,16 @@ $('historyModal').addEventListener('click',e=>{if(e.target===$('historyModal'))h
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('historyModal').hidden)histClose();});
 $('historyStart').addEventListener('change',histRefresh);
 $('historyLevel').addEventListener('change',histRender);
-$('historyCrew').addEventListener('input',histRender);
+$('historyEnd').addEventListener('change',histRefresh);
 $('historyCsv').addEventListener('click',histCSV);
 
 $('asof').value=new Date().toISOString().slice(0,10);
 $('historyStart').value=new Date(histUTCday($('asof').value)-364*86400000).toISOString().slice(0,10);
+$('historyEnd').value=$('asof').value;
 $('asof').min='2000-01-01'; // As-of history is no longer limited by today's date
 $('asof').max=new Date(Date.now()+365*86400000).toISOString().slice(0,10);
-$('asof').addEventListener('change',()=>{showCrewChoices();refresh();HIST_KEY='';if(!$('historyModal').hidden)histRefresh();});
-$('kind').addEventListener('change',()=>{refresh();if(!$('historyModal').hidden)histRender();});
+$('asof').addEventListener('change',()=>{showCrewChoices();refresh();});
+$('kind').addEventListener('change',()=>{refresh();});
 $('reload').onclick=load;
 $('selectAllPlans').onclick=()=>{for(const l of currentLegs())SELECTED_PLAN_IDS.add(l.id);showTrips();refresh();};
 $('clear').onclick=()=>{for(const l of currentLegs())SELECTED_PLAN_IDS.delete(l.id);showTrips();refresh();};
