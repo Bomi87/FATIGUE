@@ -462,6 +462,32 @@ footer {
 .history-crew-group-head span {font-size:12px;color:#a9bbd3;}
 @media(max-width:600px){.history-crew-picker {flex:1 1 100%;}.history-crew-menu {width:100%;max-height:50dvh;}.history-crew-person {font-size:16px;}}
 
+
+/* Apply the history alert colors consistently across accumulated time and usage. */
+.history-scroll td.history-status-warn {color:#ffc06b;font-weight:750;background:rgba(255,145,35,.13);}
+.history-scroll td.history-status-border {color:#ff9ba5;font-weight:750;background:rgba(243,123,135,.13);}
+.history-scroll td.history-status-over {color:#fff2f3;font-weight:900;background:#81202f;border-color:#ed5365;}
+/* Only the status cell gets the warning glyph; keep numeric values easy to read. */
+.history-scroll td.history-status-over::before {content:none;}
+.history-scroll td.history-status-over:last-child::before {content:"⚠ ";color:#fff6c7;}
+/* Over-limit: red numeric text plus a compact, readable label in both numeric columns. */
+.history-scroll td.history-status-over {color:#ff6e7f!important;background:rgba(116,20,36,.48)!important;}
+.history-over-label {display:inline-block;margin-left:6px;padding:2px 5px;border-radius:4px;background:#ac2537;color:#fff!important;font-size:10px;line-height:1.2;font-weight:800;vertical-align:middle;white-space:nowrap;}
+/* The status keeps its own distinct warning treatment. */
+.history-scroll td.history-status-over:last-child {color:#fff2f3!important;background:#81202f!important;}
+/* All filtered history rows print, not only the first 500 visible rows. */
+@media print {
+ #pdfReport.history-pdf {font-size:9px;}
+ #pdfReport.history-pdf h1 {font-size:16px;}
+ #pdfReport.history-pdf thead {display:table-header-group;}
+ #pdfReport.history-pdf th,#pdfReport.history-pdf td {padding:5px 6px;}
+ #pdfReport.history-pdf .history-print-warn {background:#ffe3c1!important;color:#7e4004!important;font-weight:800;print-color-adjust:exact;-webkit-print-color-adjust:exact;}
+ #pdfReport.history-pdf .history-print-border {background:#ffd6da!important;color:#922432!important;font-weight:800;print-color-adjust:exact;-webkit-print-color-adjust:exact;}
+ #pdfReport.history-pdf .history-print-over {background:#ffe0e4!important;color:#bb1731!important;font-weight:900;print-color-adjust:exact;-webkit-print-color-adjust:exact;}
+ #pdfReport.history-pdf .history-over-label {background:#ad2438!important;color:#fff!important;display:inline-block;margin-left:4px;padding:1px 4px;border-radius:3px;font-size:8px;print-color-adjust:exact;-webkit-print-color-adjust:exact;}
+ #pdfReport.history-pdf .report-meta {line-height:1.6;}
+}
+
 /* Simulation CREW list: grouped multi-select by approved roster position. */
 .sim-crew-tools {display:flex;align-items:center;gap:7px;flex-wrap:wrap;padding:6px 2px 10px;border-bottom:1px solid #344b66;}
 .sim-crew-tools span {margin-right:auto;color:#a9bbd3;font-size:12px;}
@@ -655,7 +681,7 @@ footer {
     </div>
    </div>
    <button id="historyRun" type="button" class="primary">조회</button>
-   <button id="historyCsv" type="button" disabled>CSV 추출</button>
+   <button id="historyPdf" type="button" disabled>PDF 추출</button>
   </div>
   <p id="historySummary" class="history-summary" aria-live="polite">조회 대기 중</p>
   <div class="history-scroll"><table><thead><tr><th>기준일</th><th>CREW</th><th>구분</th><th>산정 기준</th><th>누적시간</th><th>한도</th><th>사용률</th><th>상태</th></tr></thead><tbody id="historyRows"></tbody></table></div>
@@ -1130,6 +1156,7 @@ function exportCrewListPdf(){
  const names={all:'전체','조종':'조종','정비':'정비','객실':'객실','기타':'기타'};
  const report=document.getElementById('pdfReport')||document.createElement('section');
  report.id='pdfReport';
+ report.className='';
  const cells=['Duty 7일','Duty 28일','Duty 365일','Flight 7일','Flight 28일','Flight 365일'];
  const head=['CREW','직책',...cells];
  const rows=visible.map(p=>{
@@ -1268,13 +1295,13 @@ function histFiltered(){
 }
 function histRender(){
  const allRows=histFiltered(),rows=allRows.slice(0,500),label={over:'한도 초과',border:'경계',warn:'주의'},cls={over:'history-status-over',border:'history-status-border',warn:'history-status-warn'};
- $('historySummary').textContent=`${HIST_APPLIED_DATES.start} ~ ${HIST_APPLIED_DATES.end} · ${(histUTCday(HIST_APPLIED_DATES.end)-histUTCday(HIST_APPLIED_DATES.start))/86400000+1}일 검사 · 전체 CREW ${HIST_DIAG.crew}명 · 선택 CREW ${HIST_APPLIED_NAMES===null?'전체':HIST_APPLIED_NAMES.size+'명'} · 운항 LEG ${HIST_DIAG.legs}건 · 검사 결과 ${HIST_ROWS.length.toLocaleString()}건 · 조건 일치 ${allRows.length.toLocaleString()}건 (초과 ${allRows.filter(x=>x.level==='over').length} / 경계 ${allRows.filter(x=>x.level==='border').length} / 주의 ${allRows.filter(x=>x.level==='warn').length}) · 최대 사용률 ${HIST_DIAG.peak.toFixed(1)}%${HIST_DIAG.peakLabel?' ('+HIST_DIAG.peakLabel+')':''} · 화면 최대 500건, CSV 전체 추출`;
+ $('historySummary').textContent=`${HIST_APPLIED_DATES.start} ~ ${HIST_APPLIED_DATES.end} · ${(histUTCday(HIST_APPLIED_DATES.end)-histUTCday(HIST_APPLIED_DATES.start))/86400000+1}일 검사 · 전체 CREW ${HIST_DIAG.crew}명 · 선택 CREW ${HIST_APPLIED_NAMES===null?'전체':HIST_APPLIED_NAMES.size+'명'} · 운항 LEG ${HIST_DIAG.legs}건 · 검사 결과 ${HIST_ROWS.length.toLocaleString()}건 · 조건 일치 ${allRows.length.toLocaleString()}건 (초과 ${allRows.filter(x=>x.level==='over').length} / 경계 ${allRows.filter(x=>x.level==='border').length} / 주의 ${allRows.filter(x=>x.level==='warn').length}) · 최대 사용률 ${HIST_DIAG.peak.toFixed(1)}%${HIST_DIAG.peakLabel?' ('+HIST_DIAG.peakLabel+')':''} · 화면 최대 500건, PDF 전체 추출`;
  // Render in chunks to avoid massive synchronous HTML work on mobile.
  const tbody=$('historyRows');tbody.replaceChildren();
  if(!rows.length){tbody.innerHTML='<tr><td colspan="8">'+(HIST_DIAG.legs===0?'조회 기간에 사용할 실제 운항기록이 없습니다. 데이터를 새로고침하고 RAW 기록의 기간을 확인해 주세요.':'해당 조건의 이력이 없습니다. (검사한 최대 사용률 '+HIST_DIAG.peak.toFixed(1)+'% · 주의 기준 80%)')+'</td></tr>';return;}
  const chunkSize=250;
  for(let i=0;i<rows.length;i+=chunkSize){
-  const html=rows.slice(i,i+chunkSize).map(x=>`<tr><td>${x.date}</td><td>${esc(x.name)}</td><td>${esc(x.kind)}</td><td>${x.category==='duty'?'Duty':'Flight'} ${x.windowDays}일</td><td>${hh(x.minutes)}</td><td>${hh(x.limit*60)}</td><td>${x.pct.toFixed(1)}%</td><td class="${cls[x.level]}">${label[x.level]}</td></tr>`).join('');
+  const html=rows.slice(i,i+chunkSize).map(x=>`<tr><td>${x.date}</td><td>${esc(x.name)}</td><td>${esc(x.kind)}</td><td>${x.category==='duty'?'Duty':'Flight'} ${x.windowDays}일</td><td class="${cls[x.level]}">${hh(x.minutes)}</td><td>${hh(x.limit*60)}</td><td class="${cls[x.level]}">${x.pct.toFixed(1)}%</td><td class="${cls[x.level]}">${label[x.level]}</td></tr>`).join('');
   tbody.insertAdjacentHTML('beforeend',html);
  }
 }
@@ -1291,25 +1318,37 @@ function histClose(){
 }
 function histMarkPending(){
  $('historySummary').textContent='검사 조건을 설정한 뒤 [조회] 버튼을 눌러 주세요.';
- $('historyCsv').disabled=true;
+ $('historyPdf').disabled=true;
  $('historyRows').innerHTML='<tr><td colspan="8">조회 버튼을 누르면 검사 결과가 표시됩니다.</td></tr>';
 }
 function histRefresh(){
  const start=histUTCday($('historyStart').value),end=histUTCday($('historyEnd').value);
- if(start===null||end===null||start>end){$('historyCsv').disabled=true;HIST_ROWS=[];HIST_KEY='';$('historyRows').replaceChildren();$('historySummary').textContent='검사 시작일은 검사 종료일보다 늦을 수 없습니다.';return;}
+ if(start===null||end===null||start>end){$('historyPdf').disabled=true;HIST_ROWS=[];HIST_KEY='';$('historyRows').replaceChildren();$('historySummary').textContent='검사 시작일은 검사 종료일보다 늦을 수 없습니다.';return;}
  const key=[$('historyEnd').value,$('historyStart').value,DATA?.meta?.generatedAt||''].join('|');
  if(key!==HIST_KEY){$('historySummary').textContent='이력 계산 중…';HIST_ROWS=histAnalyze();HIST_KEY=key;}
  HIST_APPLIED_NAMES=HIST_SELECTED_NAMES===null?null:new Set(HIST_SELECTED_NAMES);
  HIST_APPLIED_LEVEL=$('historyLevel').value;
  HIST_APPLIED_DATES={start:$('historyStart').value,end:$('historyEnd').value};
- histRender();$('historyCsv').disabled=false;
+ histRender();$('historyPdf').disabled=false;
 }
-function histCSV(){
- if($('historyCsv').disabled)return;
- const rows=histFiltered();const quote=x=>'"'+String(x).replace(/"/g,'""')+'"';
- const lines=[['기준일','CREW','구분','기준','누적 HH:MM','한도 HH:MM','사용률 %','상태'],...rows.map(x=>[x.date,x.name,x.kind,`${x.category==='duty'?'Duty':'Flight'} ${x.windowDays}일`,hh(x.minutes),hh(x.limit*60),x.pct.toFixed(1),{over:'한도 초과',border:'경계',warn:'주의'}[x.level]])];
- const blob=new Blob(['\ufeff'+lines.map(a=>a.map(quote).join(',')).join('\r\n')],{type:'text/csv;charset=utf-8'});
- const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=`CREW_LIMIT_HISTORY_${$('historyStart').value}_${$('historyEnd').value}.csv`;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
+function histPDF(){
+ if($('historyPdf').disabled || !HIST_APPLIED_DATES.start)return;
+ const rows=histFiltered();
+ const labels={over:'한도 초과',border:'경계',warn:'주의'};
+ const classes={over:'history-print-over',border:'history-print-border',warn:'history-print-warn'};
+ const report=document.getElementById('pdfReport')||document.createElement('section');
+ report.id='pdfReport';
+ report.className='history-pdf';
+ const statusText=HIST_APPLIED_LEVEL==='all'?'전체':labels[HIST_APPLIED_LEVEL];
+ const counts={over:0,border:0,warn:0};
+ rows.forEach(x=>counts[x.level]++);
+ const htmlRows=rows.map(x=>{
+  const c=classes[x.level];
+  return `<tr><td>${esc(x.date)}</td><td>${esc(x.name)}</td><td>${esc(x.kind)}</td><td>${x.category==='duty'?'Duty':'Flight'} ${x.windowDays}일</td><td class="${c}">${hh(x.minutes)}</td><td>${hh(x.limit*60)}</td><td class="${c}">${x.pct.toFixed(1)}%</td><td class="${c}">${labels[x.level]}</td></tr>`;
+ }).join('');
+ report.innerHTML=`<h1>CREW 한도 이력 조회 · 실제 운항</h1><div class="report-meta">검사 시작일: ${esc(HIST_APPLIED_DATES.start)} / 검사 종료일: ${esc(HIST_APPLIED_DATES.end)} (UTC)<br>선택 승무원: ${HIST_APPLIED_NAMES===null?'전체':HIST_APPLIED_NAMES.size+'명'} · 상태: ${esc(statusText)} · 총 ${rows.length.toLocaleString()}건 (한도 초과 ${counts.over}, 경계 ${counts.border}, 주의 ${counts.warn})<br>주의 80~90% 미만 · 경계 90~100% 미만 · 한도 초과 100% 이상 · 예정 LEG 제외</div><table><thead><tr><th>기준일</th><th>CREW</th><th>구분</th><th>산정 기준</th><th>누적시간</th><th>한도</th><th>사용률</th><th>상태</th></tr></thead><tbody>${htmlRows||'<tr><td colspan="8">해당 조건의 이력이 없습니다.</td></tr>'}</tbody></table>`;
+ if(!report.isConnected)document.body.appendChild(report);
+ window.print(); // In the browser print dialog choose Save as PDF.
 }
 $('historyOpen').addEventListener('click',histOpen);
 $('historyClose').addEventListener('click',histClose);
@@ -1319,7 +1358,7 @@ $('historyStart').addEventListener('change',histMarkPending);
 $('historyLevel').addEventListener('change',histMarkPending);
 $('historyEnd').addEventListener('change',histMarkPending);
 $('historyRun').addEventListener('click',histRefresh);
-$('historyCsv').addEventListener('click',histCSV);
+$('historyPdf').addEventListener('click',histPDF);
 
 $('asof').value=new Date().toISOString().slice(0,10);
 $('historyStart').value=new Date(histUTCday($('asof').value)-364*86400000).toISOString().slice(0,10);
