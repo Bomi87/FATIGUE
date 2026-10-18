@@ -323,6 +323,9 @@ footer {
 /* Only cells nearing or reaching their verified configured time limits are highlighted. */
 #crewTable td.time-alert-warn { background:rgba(255,145,35,.23); color:#ffb15f; font-weight:800; box-shadow:inset 0 0 0 1px rgba(255,145,35,.52); }
 #crewTable td.time-alert-danger { background:rgba(243,123,135,.22); color:#ff9ba5; font-weight:800; box-shadow:inset 0 0 0 1px rgba(243,123,135,.50); }
+#crewTable td.time-alert-exceed { background:#81202f; color:#fff2f3; font-weight:900; box-shadow:inset 0 0 0 1px #ed5365; }
+#crewTable td.time-alert-exceed .limit-exceed-icon { color:#fff6c7; margin-right:6px; font-weight:900; }
+#crewTable td.time-alert-exceed .limit-exceed-icon::before { content:'⚠'; }
 /* Compact reference limits; informational only, not the calculation engine. */
 .limit-reference {
     display:flex;
@@ -355,6 +358,7 @@ footer {
   #pdfReport th {background:#e8eef7!important;position:static;}
   #pdfReport .pdf-warn {background:#ffe0b7!important;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
   #pdfReport .pdf-danger {background:#ffc6cc!important;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  #pdfReport .pdf-exceed {background:#a82839!important;color:#fff!important;font-weight:900;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
   #pdfReport tr {break-inside:avoid;}
 }
 
@@ -365,6 +369,7 @@ footer {
 .crew-notice-dot { display:inline-block; width:9px; height:9px; border-radius:3px; flex-shrink:0; }
 .crew-notice-caution { background:#E99A38; }
 .crew-notice-danger { background:#E35A62; }
+.crew-notice-exceed { background:#81202f; border:1px solid #ed5365; }
 .crew-notice-rule { border-top:1px solid #283b55; margin-top:8px; padding-top:8px; overflow-wrap:anywhere; }
 @media (max-width:600px) {
   .crew-notice-legend { gap:6px 12px; }
@@ -436,7 +441,8 @@ footer {
 .history-summary {margin:0 0 10px;color:#9fb3cc;font-size:12px;}
 .history-status-warn {color:#ffc06b;font-weight:700;}
 .history-status-border {color:#ff9ba5;font-weight:700;}
-.history-status-over {color:#ff516b;font-weight:800;}
+.history-status-over {background:#81202f;color:#fff2f3;font-weight:900;border:1px solid #ed5365;border-radius:4px;}
+.history-status-over::before {content:"⚠ ";color:#fff6c7;}
 .history-note {margin-top:10px;color:#9fb3cc;font-size:11px;line-height:1.6;}
 @media(max-width:600px) { .history-open {margin-left:0;} .history-dialog {padding:11px;max-height:94dvh;} .history-scroll th,.history-scroll td {padding:8px;} }
 
@@ -622,7 +628,8 @@ footer {
       <div class="crew-notice-legend">
         <span>시간 표기 HH:MM</span>
         <span class="crew-notice-item"><span class="crew-notice-dot crew-notice-caution" aria-hidden="true"></span>주의 80~90% 미만</span>
-        <span class="crew-notice-item"><span class="crew-notice-dot crew-notice-danger" aria-hidden="true"></span>경계 90% 이상</span>
+        <span class="crew-notice-item"><span class="crew-notice-dot crew-notice-danger" aria-hidden="true"></span>경계 90~100% 미만</span>
+        <span class="crew-notice-item"><span class="crew-notice-dot crew-notice-exceed" aria-hidden="true"></span>⚠ 한도 초과 100% 이상</span>
       </div>
       <div class="crew-notice-rule">산정 기준: UTC 종료일 기준으로 누적시간을 계산하며, 조회 기간에 종료된 LEG 및 DUTY는 전체 시간을 반영합니다.</div>
     </div>
@@ -866,9 +873,9 @@ $('rows').innerHTML=visible.length ? visible.map(p=>{
    const limit=getLimitHours(p,category,days);
    // Missing limits remain uncolored. Never interpret an unconfigured limit as compliant.
    const fraction=Number.isFinite(limit)&&limit>0?minutes/(limit*60):null;
-   const level=fraction!==null&&fraction>=0.9?'time-alert-danger':fraction!==null&&fraction>=0.8?'time-alert-warn':'';
-   const label=level==='time-alert-danger'?'경계':level==='time-alert-warn'?'주의':'';
-   return `<td class="${level}" ${label?`title="${label} · 기준 ${hh(limit*60)}"`:''}>${hh(minutes)}</td>`;
+   const level=fraction!==null&&fraction>=1?'time-alert-exceed':fraction!==null&&fraction>=0.9?'time-alert-danger':fraction!==null&&fraction>=0.8?'time-alert-warn':'';
+   const label=level==='time-alert-exceed'?'한도 초과':level==='time-alert-danger'?'경계':level==='time-alert-warn'?'주의':'';
+   return `<td class="${level}" ${label?`title="${label} · 기준 ${hh(limit*60)} · 사용률 ${(fraction*100).toFixed(1)}%"`:''}>${level==='time-alert-exceed'?'<span class="limit-exceed-icon" aria-label="한도 초과"></span>':''}${hh(minutes)}</td>`;
  };
  return `<tr data-name="${esc(p.name)}"><td>${esc(p.name)}</td><td>${esc(crewPosition(p))}</td>${[7,28,365].map(n=>timeCell('duty',n)).join('')}${[7,28,365].map(n=>timeCell('flight',n)).join('')}<td><button type="button" class="crew-export-btn" data-export-crew="${esc(p.name)}" title="${esc(p.name)} 산출근거 엑셀 다운로드">엑셀추출</button></td></tr>`;
 }).join('') : '<tr><td colspan="9">해당 기준일의 최근 365일에 유효한 CREW 기록이 없습니다. 데이터 로딩 상태와 RAW 날짜를 확인해 주세요.</td></tr>';
@@ -1131,12 +1138,12 @@ function exportCrewListPdf(){
      const min=p.tot?.[type]?.[days];
      const limit=getLimitHours(p,type,days);
      const frac=min==null||!(limit>0)?0:min/(limit*60);
-     const cls=frac>=.9?'pdf-danger':frac>=.8?'pdf-warn':'';
-     cells.push(`<td class="${cls}">${min==null?'—':hh(min)}</td>`);
+     const cls=frac>=1?'pdf-exceed':frac>=.9?'pdf-danger':frac>=.8?'pdf-warn':'';
+     cells.push(`<td class="${cls}">${min==null?'—':(cls==='pdf-exceed'?'⚠ ':'')+hh(min)}</td>`);
    }
    return `<tr><td>${esc(p.name)}</td><td>${esc(crewPosition(p))}</td>${cells.join('')}</tr>`;
  }).join('');
- report.innerHTML=`<h1>CREW 누적시간</h1><div class="report-meta">조회 기준: ${esc(utcDate(SIMULATED_ASOF))} UTC · CREW 구분: ${esc(names[$('kind').value]||'전체')} · ${visible.length}명 · 주황색: 80~90% 미만 / 빨간색: 90% 이상</div><table><thead><tr>${head.map(x=>`<th>${esc(x)}</th>`).join('')}</tr></thead><tbody>${rows||'<tr><td colspan="8">해당 조건의 CREW 없음</td></tr>'}</tbody></table>`;
+ report.innerHTML=`<h1>CREW 누적시간</h1><div class="report-meta">조회 기준: ${esc(utcDate(SIMULATED_ASOF))} UTC · CREW 구분: ${esc(names[$('kind').value]||'전체')} · ${visible.length}명 · 주황색: 80~90% 미만 / 빨간색: 90~100% 미만 / 진한 빨간색 ⚠: 100% 이상</div><table><thead><tr>${head.map(x=>`<th>${esc(x)}</th>`).join('')}</tr></thead><tbody>${rows||'<tr><td colspan="8">해당 조건의 CREW 없음</td></tr>'}</tbody></table>`;
  if(!report.isConnected)document.body.appendChild(report);
  window.print();
 }
