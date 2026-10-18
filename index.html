@@ -2,7 +2,7 @@
 <html lang="ko">
  <head>
   <meta charset="utf-8"/>
-  <meta content="width=device-width,initial-scale=1" name="viewport"/>
+  <meta content="width=device-width, initial-scale=1, maximum-scale=1" name="viewport"/>
   <title>
    CREW FATIGUE MANAGEMENT
   </title>
@@ -512,6 +512,28 @@ footer {
 .sim-crew-heading input,.sim-crew-person input {width:16px;height:16px;flex:none;margin:0;accent-color:#5c99ed;}
 .sim-no-match {padding:4px 24px;}
 @media(max-width:600px){.sim-crew-person {font-size:14px;} .sim-crew-tools button {font-size:12px;}}
+
+/* iPhone Safari: prevent automatic focus zoom on editable fields, including native dates. */
+@media (hover: none) and (pointer: coarse) {
+  input:not([type="checkbox"]):not([type="radio"]), select, textarea {
+    font-size: 16px !important;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+  input[type="date"], input[type="datetime-local"], input[type="time"],
+  #asof, #historyStart, #historyEnd, #kind, #crewSearch {
+    font-size: 16px !important;
+    min-height: 44px;
+  }
+  input[type="date"]::-webkit-date-and-time-value,
+  input[type="date"]::-webkit-datetime-edit,
+  input[type="date"]::-webkit-datetime-edit-fields-wrapper {
+    font-size: 16px !important;
+    line-height: normal;
+  }
+  /* Keep date and crew-category controls visually aligned. */
+  #asof, #kind { height: 44px; box-sizing: border-box; }
+}
 </style>
  </head>
  <body>
