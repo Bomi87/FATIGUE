@@ -678,12 +678,10 @@ footer {
  <section class="history-dialog" role="dialog" aria-modal="true" aria-labelledby="historyTitle">
   <div class="history-top"><h2 id="historyTitle">한도 이력 조회 · 실제 운항</h2><button id="historyClose" type="button" aria-label="닫기">닫기 ✕</button></div>
   <div class="history-filter">
-   <label for="historyStart">검사 시작일</label>
-   <input id="historyStart" type="date" aria-label="검사 시작일"/>
-   <label for="historyEnd">검사 종료일</label>
-   <input id="historyEnd" type="date" aria-label="검사 종료일"/>
-   <label for="historyLevel">상태</label>
-   <select id="historyLevel"><option value="all">전체</option><option value="over">한도 초과</option><option value="border">경계</option><option value="warn">주의</option></select>
+   <label for="historyStart">Start</label>
+   <input id="historyStart" type="date" aria-label="Start"/>
+   <label for="historyEnd">End</label>
+   <input id="historyEnd" type="date" aria-label="End"/>
    <div id="historyCrewPicker" class="history-crew-picker">
     <button id="historyCrewToggle" class="history-crew-toggle" type="button" aria-expanded="false" aria-controls="historyCrewMenu">전체 승무원 <span aria-hidden="true">▾</span></button>
     <div id="historyCrewMenu" class="history-crew-menu" hidden>
@@ -1207,7 +1205,7 @@ updateSortHeaders();
 let HIST_ROWS=[],HIST_KEY='',HIST_PREVIOUS_FOCUS=null,HIST_DIAG={crew:0,legs:0,peak:0,peakLabel:'',coverage:''};
 // null = all roster members; otherwise the selected normalized name keys.
 let HIST_SELECTED_NAMES=null;
-let HIST_APPLIED_NAMES=null,HIST_APPLIED_LEVEL='all',HIST_APPLIED_DATES={start:'',end:''};
+let HIST_APPLIED_NAMES=null,HIST_APPLIED_DATES={start:'',end:''};
 const histNameKey=s=>String(s||'').trim().replace(/\s+/g,' ').toUpperCase();
 function histRosterGroups(){
  const groups={'조종':[],'객실':[],'정비':[],'기타':[]};
@@ -1301,8 +1299,7 @@ function histAnalyze(){
  return output.sort((a,b)=>b.date.localeCompare(a.date)||({over:0,border:1,warn:2}[a.level]-{over:0,border:1,warn:2}[b.level])||b.pct-a.pct||a.name.localeCompare(b.name));
 }
 function histFiltered(){
- const lvl=HIST_APPLIED_LEVEL;
- return HIST_ROWS.filter(x=>(lvl==='all'||x.level===lvl)&&(HIST_APPLIED_NAMES===null||HIST_APPLIED_NAMES.has(histNameKey(x.name))));
+ return HIST_ROWS.filter(x=>HIST_APPLIED_NAMES===null||HIST_APPLIED_NAMES.has(histNameKey(x.name)));
 }
 function histRender(){
  const allRows=histFiltered(),rows=allRows.slice(0,500),label={over:'한도 초과',border:'경계',warn:'주의'},cls={over:'history-status-over',border:'history-status-border',warn:'history-status-warn'};
@@ -1334,11 +1331,10 @@ function histMarkPending(){
 }
 function histRefresh(){
  const start=histUTCday($('historyStart').value),end=histUTCday($('historyEnd').value);
- if(start===null||end===null||start>end){$('historyPdf').disabled=true;HIST_ROWS=[];HIST_KEY='';$('historyRows').replaceChildren();$('historySummary').textContent='검사 시작일은 검사 종료일보다 늦을 수 없습니다.';return;}
+ if(start===null||end===null||start>end){$('historyPdf').disabled=true;HIST_ROWS=[];HIST_KEY='';$('historyRows').replaceChildren();$('historySummary').textContent='Start는 End보다 늦을 수 없습니다.';return;}
  const key=[$('historyEnd').value,$('historyStart').value,DATA?.meta?.generatedAt||''].join('|');
  if(key!==HIST_KEY){$('historySummary').textContent='이력 계산 중…';HIST_ROWS=histAnalyze();HIST_KEY=key;}
  HIST_APPLIED_NAMES=HIST_SELECTED_NAMES===null?null:new Set(HIST_SELECTED_NAMES);
- HIST_APPLIED_LEVEL=$('historyLevel').value;
  HIST_APPLIED_DATES={start:$('historyStart').value,end:$('historyEnd').value};
  histRender();$('historyPdf').disabled=false;
 }
@@ -1350,14 +1346,13 @@ function histPDF(){
  const report=document.getElementById('pdfReport')||document.createElement('section');
  report.id='pdfReport';
  report.className='history-pdf';
- const statusText=HIST_APPLIED_LEVEL==='all'?'전체':labels[HIST_APPLIED_LEVEL];
  const counts={over:0,border:0,warn:0};
  rows.forEach(x=>counts[x.level]++);
  const htmlRows=rows.map(x=>{
   const c=classes[x.level];
   return `<tr><td>${esc(x.date)}</td><td>${esc(x.name)}</td><td>${esc(x.kind)}</td><td>${x.category==='duty'?'Duty':'Flight'} ${x.windowDays}일</td><td class="${c}">${hh(x.minutes)}</td><td>${hh(x.limit*60)}</td><td class="${c}">${x.pct.toFixed(1)}%</td><td class="${c}">${labels[x.level]}</td></tr>`;
  }).join('');
- report.innerHTML=`<h1>CREW 한도 이력 조회 · 실제 운항</h1><div class="report-meta">검사 시작일: ${esc(HIST_APPLIED_DATES.start)} / 검사 종료일: ${esc(HIST_APPLIED_DATES.end)} (UTC)<br>선택 승무원: ${HIST_APPLIED_NAMES===null?'전체':HIST_APPLIED_NAMES.size+'명'} · 상태: ${esc(statusText)} · 총 ${rows.length.toLocaleString()}건 (한도 초과 ${counts.over}, 경계 ${counts.border}, 주의 ${counts.warn})<br>주의 80~90% 미만 · 경계 90~100% 미만 · 한도 초과 100% 이상 · 예정 LEG 제외</div><table><thead><tr><th>기준일</th><th>CREW</th><th>구분</th><th>산정 기준</th><th>누적시간</th><th>한도</th><th>사용률</th><th>상태</th></tr></thead><tbody>${htmlRows||'<tr><td colspan="8">해당 조건의 이력이 없습니다.</td></tr>'}</tbody></table>`;
+ report.innerHTML=`<h1>CREW 한도 이력 조회 · 실제 운항</h1><div class="report-meta">Start: ${esc(HIST_APPLIED_DATES.start)} / End: ${esc(HIST_APPLIED_DATES.end)} (UTC)<br>선택 승무원: ${HIST_APPLIED_NAMES===null?'전체':HIST_APPLIED_NAMES.size+'명'} · 총 ${rows.length.toLocaleString()}건 (한도 초과 ${counts.over}, 경계 ${counts.border}, 주의 ${counts.warn})<br>주의 80~90% 미만 · 경계 90~100% 미만 · 한도 초과 100% 이상 · 예정 LEG 제외</div><table><thead><tr><th>기준일</th><th>CREW</th><th>구분</th><th>산정 기준</th><th>누적시간</th><th>한도</th><th>사용률</th><th>상태</th></tr></thead><tbody>${htmlRows||'<tr><td colspan="8">해당 조건의 이력이 없습니다.</td></tr>'}</tbody></table>`;
  if(!report.isConnected)document.body.appendChild(report);
  window.print(); // In the browser print dialog choose Save as PDF.
 }
@@ -1366,7 +1361,6 @@ $('historyClose').addEventListener('click',histClose);
 $('historyModal').addEventListener('click',e=>{if(e.target===$('historyModal'))histClose();});
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('historyModal').hidden)histClose();});
 $('historyStart').addEventListener('change',histMarkPending);
-$('historyLevel').addEventListener('change',histMarkPending);
 $('historyEnd').addEventListener('change',histMarkPending);
 $('historyRun').addEventListener('click',histRefresh);
 $('historyPdf').addEventListener('click',histPDF);
