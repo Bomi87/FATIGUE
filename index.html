@@ -259,6 +259,8 @@ footer {
     }
 }
 
+.fatigue-emoji {display:inline-block;margin-left:9px;font-size:1.05em;vertical-align:middle;letter-spacing:normal;}
+
 /* Summary cards: compact on both PC and mobile, always three in one row. */
 .cards {
     grid-template-columns:repeat(3,minmax(0,1fr));
@@ -553,7 +555,7 @@ header #updated.last-flight-box {min-width:260px;max-width:min(500px,100%);font-
   <header>
    <div>
     <div class="brand">
-     CREW FATIGUE MANAGEMENT
+     CREW FATIGUE MANAGEMENT <span class="fatigue-emoji" aria-label="수면 및 피로">💤</span>
     </div>
    </div>
    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
@@ -1149,37 +1151,28 @@ function exportCrewExcel(name){
   // For a dual-type crew member, preserve each leg's actual aircraft registration.
   const registration=leg=>{
     const raw=String(leg.aircraft||'').trim().toUpperCase();
-    const found=raw.match(/HL(?:8080|8372)/);
+    const found=raw.match(/\bHL[0-9A-Z]{3,6}\b/);
     if(found)return found[0];
+    // Preserve legacy fleet labels in older ACTUAL records.
     if(raw==='ACJ'||raw==='A319'||raw==='A319CJ')return 'HL8080';
     if(raw==='G650'||raw==='G650ER')return 'HL8372';
-    return raw||'—';
+    return raw||'미상';
   };
   const reportStart=end-365*86400000;
   const reportDuties=p.detail.duty.filter(d=>d.end>reportStart && d.end<=end);
   const reportLegs=reportDuties.flatMap(d=>d.legs.filter(l=>l.arr<=end));
   // Count only this crew member's LEGs completed inside the selected 365-day UTC window.
-  // Use LEG arrival (rather than DUTY end) so the count matches the '365-day LEG count' label.
   const countedLegs=p.legs.filter(l=>l.arr>reportStart && l.arr<=end);
-  const legCounts={HL8080:0,HL8372:0,other:0};
-  countedLegs.forEach(l=>{
-    const reg=registration(l);
-    if(reg==='HL8080'||reg==='HL8372')legCounts[reg]++;
-    else legCounts.other++;
-  });
-  const legCountBreakdown=`HL8080: ${legCounts.HL8080}회 / HL8372: ${legCounts.HL8372}회` +
-    (legCounts.other?` / 기타: ${legCounts.other}회`:'');
-  // Count night LEGs from RAW CG Night Time (positive minutes) in the same 365-day window.
-  // Planned LEGs have no recorded Night Time and are not counted.
+  const breakdown=legs=>{
+    const counts=new Map();
+    for(const leg of legs){const tail=registration(leg);counts.set(tail,(counts.get(tail)||0)+1);}
+    return [...counts.entries()].sort((a,b)=>a[0].localeCompare(b[0]))
+      .map(([tail,count])=>`${tail}: ${count}회`).join(' / ')||'해당 없음';
+  };
+  const legCountBreakdown=breakdown(countedLegs);
+  // CG Night Time from actual RAW; plans have no actual Night Time.
   const nightLegs=countedLegs.filter(l=>l.source==='actual' && Number(l.nightMinutes)>0);
-  const nightCounts={HL8080:0,HL8372:0,other:0};
-  nightLegs.forEach(l=>{
-    const reg=registration(l);
-    if(reg==='HL8080'||reg==='HL8372')nightCounts[reg]++;
-    else nightCounts.other++;
-  });
-  const nightBreakdown=`HL8080: ${nightCounts.HL8080}회 / HL8372: ${nightCounts.HL8372}회` +
-    (nightCounts.other?` / 기타: ${nightCounts.other}회`:'');
+  const nightBreakdown=breakdown(nightLegs);
   const summary=[
     ['이름',p.name],
     ['모듈',crewPosition(p)],
