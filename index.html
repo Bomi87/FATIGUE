@@ -537,6 +537,8 @@ footer {
   #asof, #kind { height: 44px; box-sizing: border-box; }
 }
 
+#crewTable thead th .leg-period { display:block; font-size:11px; line-height:1.4; font-weight:500; }
+
 /* Latest completed actual LEG, in place of the old Loaded/Actual/Planned status. */
 header #updated.last-flight-box {min-width:260px;max-width:min(500px,100%);font-size:12px;line-height:1.45;}
 .last-flight-heading {color:#a9bbd3;font-size:11px;font-weight:650;margin-bottom:4px;}
@@ -682,10 +684,10 @@ header #updated.last-flight-box {min-width:260px;max-width:min(500px,100%);font-
          유형
         </th>
         <th class="sort-head" data-sort="legCount" tabindex="0" role="button" aria-sort="none" title="최근 365일 실제 + 선택 예정 LEG 수">
-         LEG 횟수(365일)
+         LEG 횟수<span class="leg-period">(365일)</span>
         </th>
         <th class="sort-head" data-sort="nightLegCount" tabindex="0" role="button" aria-sort="none" title="최근 365일 실제 Night Time 포함 LEG 수">
-         야간포함 LEG 횟수(365일)
+         야간포함 LEG 횟수<span class="leg-period">(365일)</span>
         </th>
         <th class="sort-head" data-sort="duty7" tabindex="0" role="button" aria-sort="none" title="클릭하여 정렬">
          Duty 7일
