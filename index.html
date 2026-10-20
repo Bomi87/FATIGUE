@@ -545,6 +545,21 @@ header #updated.last-flight-box {min-width:260px;max-width:min(500px,100%);font-
 .last-flight-tail {color:#91b9ff;font-weight:750;white-space:nowrap;}
 .last-flight-info {color:#edf3ff;overflow-wrap:anywhere;}
 @media(max-width:600px){header #updated.last-flight-box {width:100%;min-width:0;max-width:100%;font-size:11px;}.last-flight-row {grid-template-columns:83px minmax(0,1fr);gap:6px;}}
+
+/* Compact name column; keep full names readable without wasting horizontal space. */
+#crewTable { table-layout:auto; }
+#crewTable thead th:first-child,
+#crewTable tbody td:first-child { width:230px; max-width:230px; min-width:175px; }
+#crewTable thead th:nth-child(2),
+#crewTable tbody td:nth-child(2) { width:65px; }
+#crewTable thead th:nth-child(3),
+#crewTable tbody td:nth-child(3) { min-width:82px; text-align:center; }
+#crewTable thead th:nth-child(4),
+#crewTable tbody td:nth-child(4) { min-width:125px; text-align:center; }
+@media(max-width:950px) {
+  #crewTable thead th:first-child,
+  #crewTable tbody td:first-child { width:185px; max-width:185px; min-width:165px; }
+}
 </style>
  </head>
  <body>
@@ -666,6 +681,12 @@ header #updated.last-flight-box {min-width:260px;max-width:min(500px,100%);font-
         <th class="sort-head" data-sort="kind" tabindex="0" role="button" aria-sort="none" title="클릭하여 정렬">
          유형
         </th>
+        <th class="sort-head" data-sort="legCount" tabindex="0" role="button" aria-sort="none" title="최근 365일 실제 + 선택 예정 LEG 수">
+         LEG 횟수
+        </th>
+        <th class="sort-head" data-sort="nightLegCount" tabindex="0" role="button" aria-sort="none" title="최근 365일 실제 Night Time 포함 LEG 수">
+         야간포함 LEG 횟수
+        </th>
         <th class="sort-head" data-sort="duty7" tabindex="0" role="button" aria-sort="none" title="클릭하여 정렬">
          Duty 7일
         </th>
@@ -734,10 +755,11 @@ let SIMULATED_ASOF=null;
 let CURRENT_RESULTS=[];
 // Default: highest 365-day DUTY first. Header clicks choose the metric (largest first).
 let CREW_SORT_KEY='duty365', CREW_SORT_DIRECTION='desc';
-const SORT_KEYS=['name','kind','duty7','duty28','duty365','flight7','flight28','flight365'];
+const SORT_KEYS=['name','kind','legCount','nightLegCount','duty7','duty28','duty365','flight7','flight28','flight365'];
 function crewSortValue(p,key){
  if(key==='name')return p.name;
  if(key==='kind')return crewPosition(p);
+ if(key==='legCount'||key==='nightLegCount')return p[key]??0;
  if(key==='usage')return p.assessment?.seen ? p.assessment.maxPct : -Infinity;
  if(key==='status')return ({'경계':4,'주의':3,'정상':2,'미설정':1})[p.assessment?.status]||0;
  const m=/^(duty|flight)(7|28|365)$/.exec(key);
@@ -921,6 +943,14 @@ results.forEach(p=>{
    if(a.maxPct>original.maxPct){p.assessment=a;}
  }
 });
+// Apply the same completed-LEG 365-day UTC window used by the personal Excel summary.
+const legWindowEnd=asof+86400000-1;
+const legWindowStart=legWindowEnd-365*86400000;
+for(const p of results){
+  const counted=p.legs.filter(l=>l.arr>legWindowStart&&l.arr<=legWindowEnd);
+  p.legCount=counted.length;
+  p.nightLegCount=counted.filter(l=>l.source==='actual'&&Number(l.nightMinutes)>0).length;
+}
 CURRENT_RESULTS=results;
 results.sort(compareCrew);
 updateSortHeaders();
@@ -941,8 +971,8 @@ $('rows').innerHTML=visible.length ? visible.map(p=>{
    const label=level==='time-alert-exceed'?'위험':level==='time-alert-danger'?'경계':level==='time-alert-warn'?'주의':'';
    return `<td class="${level}" ${label?`title="${label} · 기준 ${hh(limit*60)} · 사용률 ${(fraction*100).toFixed(1)}%"`:''}>${level==='time-alert-exceed'?'<span class="limit-exceed-icon" aria-label="위험"></span>':''}${hh(minutes)}</td>`;
  };
- return `<tr data-name="${esc(p.name)}"><td>${esc(p.name)}</td><td>${esc(crewPosition(p))}</td>${[7,28,365].map(n=>timeCell('duty',n)).join('')}${[7,28,365].map(n=>timeCell('flight',n)).join('')}<td><button type="button" class="crew-export-btn" data-export-crew="${esc(p.name)}" title="${esc(p.name)} 산출근거 엑셀 다운로드">엑셀추출</button></td></tr>`;
-}).join('') : '<tr><td colspan="9">해당 기준일의 최근 365일에 유효한 CREW 기록이 없습니다. 데이터 로딩 상태와 RAW 날짜를 확인해 주세요.</td></tr>';
+ return `<tr data-name="${esc(p.name)}"><td>${esc(p.name)}</td><td>${esc(crewPosition(p))}</td><td>${p.legCount}</td><td>${p.nightLegCount}</td>${[7,28,365].map(n=>timeCell('duty',n)).join('')}${[7,28,365].map(n=>timeCell('flight',n)).join('')}<td><button type="button" class="crew-export-btn" data-export-crew="${esc(p.name)}" title="${esc(p.name)} 산출근거 엑셀 다운로드">엑셀추출</button></td></tr>`;
+}).join('') : '<tr><td colspan="11">해당 기준일의 최근 365일에 유효한 CREW 기록이 없습니다. 데이터 로딩 상태와 RAW 날짜를 확인해 주세요.</td></tr>';
 
 }
 function showTrips(){
