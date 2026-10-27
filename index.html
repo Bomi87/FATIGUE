@@ -583,6 +583,18 @@ header #updated.last-flight-box {min-width:260px;max-width:min(500px,100%);font-
     -webkit-appearance:none;
     appearance:none;
   }
+  /* Safari's inner date text needs its own vertical centering. */
+  .controls .field #asof::-webkit-date-and-time-value {
+    display:flex;
+    align-items:center;
+    min-height:100%;
+  }
+  .controls .field #asof::-webkit-datetime-edit {
+    display:flex;
+    align-items:center;
+    height:100%;
+    padding:0;
+  }
   /* Confine the wide result table to its card, including on wide foldables. */
   #crewTableWrap {
     display:block;
