@@ -1035,9 +1035,8 @@ function showTrips(){
   refresh();
  });
 }
-// Portal Google login is the only login. The backend validates portal proof per request.
+// Same front-end portal login flow used by the other dashboard apps.
 const BACKEND_URL = 'https://script.google.com/macros/s/AKfycbw_hSBOeESSs9C8S_Mf2ORDBrRNCrb4AA30S4pkY_7C6I_b6QKaeaUYA0-dklS3UDXJSA/exec';
-const PORTAL_SHARED_PROOF_KEY='portalSharedTakeoffTokenV1';
 let loading=false;
 // Header: show the most recent completed ACTUAL LEG by aircraft registration.
 function renderLatestActualFlights(actual){
@@ -1066,12 +1065,6 @@ function renderLatestActualFlights(actual){
 }
 function setConnectionStatus(message){const node=$('updated');if(node)node.textContent=message;}
 function authError(message){const msg=$('message');msg.hidden=false;msg.textContent=message;setConnectionStatus('연결 확인 필요');}
-function getSavedPortalToken(){
-  try{
-    const saved=JSON.parse(sessionStorage.getItem(PORTAL_SHARED_PROOF_KEY)||'null');
-    return saved?.token && Number(saved.expiresAt)>Date.now()+5000 ? String(saved.token) : '';
-  }catch(e){return '';}
-}
 
 // POST to GAS through an isolated hidden iframe, no Worker, JSONP or CORS fetch.
 // The reply origin, request ID, and source window are checked.
@@ -1111,13 +1104,11 @@ function gasBridgePost(payload) {
 async function load(){
   if(!window.CURRENT_PORTAL_USER)return;
   if(loading)return;
-  const portalToken=getSavedPortalToken();
-  if(!portalToken){authError('포털 인증정보가 만료되었습니다. 포털에서 앱을 다시 열어 주세요.');return;}
   loading=true;
   $('message').hidden=true;
   $('updated').textContent='Loading…';
   try{
-    const data=await gasBridgePost({action:'data',portalSessionToken:portalToken});
+    const data=await gasBridgePost({action:'data'});
     if(!data || !data.ok){
       throw Error(data?.error || '백엔드 오류');
     }
