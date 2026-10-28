@@ -1035,29 +1035,10 @@ function showTrips(){
   refresh();
  });
 }
-// Portal shared 24h login is the only interactive login flow.
-// CREW back-end validates the portal-signed token before issuing its own session.
+// Portal Google login is the only login. The backend validates portal proof per request.
 const BACKEND_URL = 'https://script.google.com/macros/s/AKfycbw_hSBOeESSs9C8S_Mf2ORDBrRNCrb4AA30S4pkY_7C6I_b6QKaeaUYA0-dklS3UDXJSA/exec';
-const CREW_SESSION_KEY='crew-duty-dashboard-session-v2';
-const PORTAL_SESSION_STORAGE_KEY='bomiPortalSessionTokenV2';
-let crewSession=null;
+const PORTAL_SHARED_PROOF_KEY='portalSharedTakeoffTokenV1';
 let loading=false;
-let creatingCrewSession=false;
-function readCrewSession(){
-  try {const s=JSON.parse(localStorage.getItem(CREW_SESSION_KEY)||'null');
-    const email=String(window.CURRENT_PORTAL_USER?.email||'').toLowerCase();
-    if(s?.sessionToken&&s.expires>Date.now()+5000&&s.email===email)return s;
-    localStorage.removeItem(CREW_SESSION_KEY);
-  }catch(e){}return null;
-}
-function storeCrewSession(s){
-  crewSession={sessionToken:s.sessionToken,expires:s.expires,email:String(s.email||'').toLowerCase()};
-  try{localStorage.setItem(CREW_SESSION_KEY,JSON.stringify(crewSession));}catch(e){}
-}
-function clearCrewSession(){
-  crewSession=null;
-  try{localStorage.removeItem(CREW_SESSION_KEY);}catch(e){}
-}
 // Header: show the most recent completed ACTUAL LEG by aircraft registration.
 function renderLatestActualFlights(actual){
   // Derive aircraft registrations from the already loaded ACTUAL records.
@@ -1087,33 +1068,9 @@ function setConnectionStatus(message){const node=$('updated');if(node)node.textC
 function authError(message){const msg=$('message');msg.hidden=false;msg.textContent=message;setConnectionStatus('연결 확인 필요');}
 function getSavedPortalToken(){
   try{
-    const token=String(localStorage.getItem(PORTAL_SESSION_STORAGE_KEY)||'').trim();
-    if(!token)return '';
-    const part=token.split('.')[0];
-    const normalized=part.replace(/-/g,'+').replace(/_/g,'/');
-    const payload=JSON.parse(atob(normalized+'='.repeat((4-normalized.length%4)%4)));
-    const email=String(window.CURRENT_PORTAL_USER?.email||'').toLowerCase();
-    return payload.exp*1000>Date.now()+5000 && String(payload.email||'').toLowerCase()===email ? token : '';
+    const saved=JSON.parse(sessionStorage.getItem(PORTAL_SHARED_PROOF_KEY)||'null');
+    return saved?.token && Number(saved.expiresAt)>Date.now()+5000 ? String(saved.token) : '';
   }catch(e){return '';}
-}
-async function requestCredential(){
-  if(!window.CURRENT_PORTAL_USER||creatingCrewSession)return;
-  const token=getSavedPortalToken();
-  if(!token){
-    authError('포털의 서명 세션이 없거나 만료되었습니다. 포털에서 Google 로그인 후 다시 접속해 주세요. (최초 갱신 시 1회 필요)');
-    return;
-  }
-  creatingCrewSession=true;
-  setConnectionStatus('포털 인증 세션 확인 중…');
-  try{
-    const session=await gasBridgePost({action:'session',portalSessionToken:token});
-    if(!session?.ok||!session.sessionToken)throw Error(session?.error||'포털 인증 실패');
-    if(String(session.email||'').toLowerCase()!==String(window.CURRENT_PORTAL_USER.email||'').toLowerCase())throw Error('포털 사용자 계정이 일치하지 않습니다.');
-    storeCrewSession(session);
-    $('loginButton').style.display='none';
-    load();
-  }catch(e){authError('포털 인증 오류: '+e.message);}
-  finally{creatingCrewSession=false;}
 }
 
 // POST to GAS through an isolated hidden iframe, no Worker, JSONP or CORS fetch.
@@ -1153,15 +1110,15 @@ function gasBridgePost(payload) {
 
 async function load(){
   if(!window.CURRENT_PORTAL_USER)return;
-  if(!crewSession || crewSession.expires<=Date.now()){clearCrewSession();requestCredential();return;}
   if(loading)return;
+  const portalToken=getSavedPortalToken();
+  if(!portalToken){authError('포털 인증정보가 만료되었습니다. 포털에서 앱을 다시 열어 주세요.');return;}
   loading=true;
   $('message').hidden=true;
   $('updated').textContent='Loading…';
   try{
-    const data=await gasBridgePost({action:'data',sessionToken:crewSession.sessionToken});
+    const data=await gasBridgePost({action:'data',portalSessionToken:portalToken});
     if(!data || !data.ok){
-      if(/session|access revoked|account access/i.test(String(data?.error||''))){clearCrewSession();requestCredential();return;}
       throw Error(data?.error || '백엔드 오류');
     }
     if(!Array.isArray(data.actual))throw Error('GAS 응답에 actual 배열이 없습니다. 배포된 백엔드 버전을 확인하세요.');
@@ -1506,15 +1463,13 @@ window.addEventListener('error', function(event) {
 window.addEventListener('unhandledrejection', function(event) {
   if (!DATA) authError('통신 오류: ' + String(event.reason?.message || event.reason));
 });
-// Use existing 24-hour portal cache and app permission gate.
+// Portal common-auth controls initial sign-in and app permission.
 let crewAppStarted = false;
 window.startProtectedApp = function () {
   if (crewAppStarted) return;
   crewAppStarted = true;
-  setConnectionStatus('승인된 사용자 · 데이터 인증 시작…');
-  crewSession=readCrewSession();
-  if(crewSession){$('loginButton').style.display='none';load();}
-  else requestCredential();
+  $('loginButton').style.display='none';
+  load();
 };
 (function waitForPortalAuth(){
   if(window.CURRENT_PORTAL_USER){window.startProtectedApp();return;}
