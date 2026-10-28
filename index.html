@@ -451,6 +451,10 @@ footer {
 .history-scroll {overflow:auto;min-height:0;flex:1;}
 .history-scroll table {font-size:12px;}
 .history-scroll th {top:0;z-index:1;}
+.history-scroll th[data-history-sort] {cursor:pointer;user-select:none;white-space:nowrap;}
+.history-scroll th[data-history-sort]:hover,
+.history-scroll th[data-history-sort]:focus-visible {color:#fff;background:#203956;outline-offset:-2px;}
+.history-scroll th[data-history-sort] .history-sort-arrow {margin-left:5px;color:#8db6f4;font-size:10px;}
 .history-summary {margin:0 0 10px;color:#9fb3cc;font-size:12px;}
 .history-status-warn {color:#ffc06b;font-weight:700;}
 .history-status-border {color:#ff9ba5;font-weight:700;}
@@ -791,7 +795,7 @@ header #updated.last-flight-box {min-width:260px;max-width:min(500px,100%);font-
    <button id="historyPdf" type="button" disabled>PDF 추출</button>
   </div>
   <p id="historySummary" class="history-summary" aria-live="polite">조회 대기 중</p>
-  <div class="history-scroll"><table><thead><tr><th>기준일</th><th>CREW</th><th>구분</th><th>산정 기준</th><th>누적시간</th><th>한도</th><th>사용률</th><th>상태</th></tr></thead><tbody id="historyRows"></tbody></table></div>
+  <div class="history-scroll"><table><thead><tr><th data-history-sort="date" tabindex="0" role="button">기준일<span class="history-sort-arrow" aria-hidden="true"></span></th><th data-history-sort="name" tabindex="0" role="button">CREW<span class="history-sort-arrow" aria-hidden="true"></span></th><th data-history-sort="kind" tabindex="0" role="button">구분<span class="history-sort-arrow" aria-hidden="true"></span></th><th data-history-sort="period" tabindex="0" role="button">산정 기준<span class="history-sort-arrow" aria-hidden="true"></span></th><th data-history-sort="minutes" tabindex="0" role="button">누적시간<span class="history-sort-arrow" aria-hidden="true"></span></th><th>한도</th><th data-history-sort="pct" tabindex="0" role="button">사용률<span class="history-sort-arrow" aria-hidden="true"></span></th><th data-history-sort="level" tabindex="0" role="button">상태<span class="history-sort-arrow" aria-hidden="true"></span></th></tr></thead><tbody id="historyRows"></tbody></table></div>
  </section>
 </div>
   <script async="" defer="" src="https://accounts.google.com/gsi/client">
@@ -1274,6 +1278,7 @@ updateSortHeaders();
 // Historic actual-only window scan. One RAW load; timestamp-sorted prefix sums,
 // not a full duty recomputation for every day. UI filters are client-only.
 let HIST_ROWS=[],HIST_KEY='',HIST_PREVIOUS_FOCUS=null,HIST_DIAG={crew:0,legs:0,peak:0,peakLabel:'',coverage:''};
+let HIST_SORT_KEY='date',HIST_SORT_DIRECTION='desc';
 // null = all roster members; otherwise the selected normalized name keys.
 let HIST_SELECTED_NAMES=null;
 let HIST_APPLIED_NAMES=null,HIST_APPLIED_DATES={start:'',end:''};
@@ -1310,6 +1315,8 @@ $('historyCrewToggle').addEventListener('click',()=>{
  const menu=$('historyCrewMenu');menu.hidden=!menu.hidden;
  $('historyCrewToggle').setAttribute('aria-expanded',String(!menu.hidden));
 });
+// Keep checkbox clicks inside the picker even when its contents are re-rendered.
+$('historyCrewPicker').addEventListener('click',e=>e.stopPropagation());
 $('historyCrewAll').addEventListener('click',()=>histCrewApplySelection(new Set(Object.values(histRosterGroups()).flat().map(x=>x.key))));
 $('historyCrewNone').addEventListener('click',()=>histCrewApplySelection(new Set()));
 $('historyCrewGroups').addEventListener('change',e=>{
@@ -1370,8 +1377,38 @@ function histAnalyze(){
  return output.sort((a,b)=>b.date.localeCompare(a.date)||({over:0,border:1,warn:2}[a.level]-{over:0,border:1,warn:2}[b.level])||b.pct-a.pct||a.name.localeCompare(b.name));
 }
 function histFiltered(){
- return HIST_ROWS.filter(x=>HIST_APPLIED_NAMES===null||HIST_APPLIED_NAMES.has(histNameKey(x.name)));
+ const rows=HIST_ROWS.filter(x=>HIST_APPLIED_NAMES===null||HIST_APPLIED_NAMES.has(histNameKey(x.name)));
+ const value=(x,key)=>{
+  if(key==='period')return (x.category==='duty'?'Duty':'Flight')+' '+String(x.windowDays).padStart(3,'0');
+  if(key==='level')return {warn:0,border:1,over:2}[x.level];
+  return x[key];
+ };
+ const direction=HIST_SORT_DIRECTION==='asc'?1:-1;
+ rows.sort((a,b)=>{
+  const x=value(a,HIST_SORT_KEY),y=value(b,HIST_SORT_KEY);
+  const cmp=typeof x==='number'&&typeof y==='number'?x-y:String(x).localeCompare(String(y),'ko');
+  return direction*cmp||b.date.localeCompare(a.date)||a.name.localeCompare(b.name);
+ });
+ return rows;
 }
+function histUpdateSortHeaders(){
+ document.querySelectorAll('[data-history-sort]').forEach(th=>{
+  const active=th.dataset.historySort===HIST_SORT_KEY;
+  th.setAttribute('aria-sort',active?(HIST_SORT_DIRECTION==='asc'?'ascending':'descending'):'none');
+  th.querySelector('.history-sort-arrow').textContent=active?(HIST_SORT_DIRECTION==='asc'?'▲':'▼'):'↕';
+ });
+}
+function histSetSort(key){
+ HIST_SORT_DIRECTION=HIST_SORT_KEY===key?(HIST_SORT_DIRECTION==='asc'?'desc':'asc'):(key==='date'?'desc':'asc');
+ HIST_SORT_KEY=key;
+ histUpdateSortHeaders();
+ if(HIST_APPLIED_DATES.start)histRender();
+}
+document.querySelectorAll('[data-history-sort]').forEach(th=>{
+ th.addEventListener('click',()=>histSetSort(th.dataset.historySort));
+ th.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();histSetSort(th.dataset.historySort);}});
+});
+histUpdateSortHeaders();
 function histRender(){
  const allRows=histFiltered(),rows=allRows.slice(0,500),label={over:'위험',border:'경계',warn:'주의'},cls={over:'history-status-over',border:'history-status-border',warn:'history-status-warn'};
  $('historySummary').textContent=`${HIST_APPLIED_DATES.start} ~ ${HIST_APPLIED_DATES.end} · ${(histUTCday(HIST_APPLIED_DATES.end)-histUTCday(HIST_APPLIED_DATES.start))/86400000+1}일 검사 · 전체 CREW ${HIST_DIAG.crew}명 · 선택 CREW ${HIST_APPLIED_NAMES===null?'전체':HIST_APPLIED_NAMES.size+'명'} · 운항 LEG ${HIST_DIAG.legs}건 · 검사 결과 ${HIST_ROWS.length.toLocaleString()}건 · 조건 일치 ${allRows.length.toLocaleString()}건 (위험 ${allRows.filter(x=>x.level==='over').length} / 경계 ${allRows.filter(x=>x.level==='border').length} / 주의 ${allRows.filter(x=>x.level==='warn').length}) · 최대 사용률 ${HIST_DIAG.peak.toFixed(1)}%${HIST_DIAG.peakLabel?' ('+HIST_DIAG.peakLabel+')':''} · 화면 최대 500건, PDF 전체 추출`;
